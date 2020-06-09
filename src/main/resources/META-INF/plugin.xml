@@ -1,0 +1,25 @@
+<idea-plugin>
+    <id>com.uriyyo.evaluate_async_code</id>
+    <name>Evaluate async code</name>
+    <version>1.0</version>
+    <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
+
+    <description>
+        Finally, you can use await in evaluate expression
+    </description>
+
+    <!--    <change-notes></change-notes>    -->
+
+    <idea-version since-build="192"/>
+    <depends>com.intellij.modules.lang</depends>
+    <depends>com.intellij.modules.python</depends>
+    <depends>com.intellij.modules.pycharm</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <programRunner implementation="com.uriyyo.evaluate_async_code.AsyncPyDebugRunner" order="first"/>
+    </extensions>
+
+    <actions>
+    </actions>
+
+</idea-plugin>
