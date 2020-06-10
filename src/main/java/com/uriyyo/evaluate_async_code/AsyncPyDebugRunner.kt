@@ -20,12 +20,9 @@ class AsyncPyDebugRunner : PyDebugRunner() {
         ) {
             override fun evaluate(expression: String?, execute: Boolean, doTrunc: Boolean): PyDebugValue {
                 if (expression?.isAsyncCode == true) {
-                    super.evaluate(expression.toAsyncCode(), true, true)
-
-                    val value = super.evaluate(ASYNC_RESULT_VAR, false, true)
-                    super.evaluate(ASYNC_CLEAN_UP, true, true)
-
-                    return value
+                    val (asyncCode, resultVar) = expression.toAsyncCode()
+                    super.evaluate(asyncCode, true, true)
+                    return super.evaluate(resultVar, false, true)
                 }
 
                 return super.evaluate(expression, execute, doTrunc)

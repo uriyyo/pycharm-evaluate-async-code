@@ -1,5 +1,8 @@
 package com.uriyyo.evaluate_async_code
 
+import kotlin.math.absoluteValue
+import kotlin.random.Random
+
 // Thanks to https://github.com/erdewit/nest_asyncio/blob/master/nest_asyncio.py
 const val NEST_ASYNCIO_SOUCE_CODE = """
 def __patch_asyncio__():
@@ -176,15 +179,14 @@ def __patch_asyncio__():
 __patch_asyncio__()
 """
 
-const val ASYNC_RESULT_VAR = "__builtins__.__async_evaluation_result__" // should be available at global scope
-const val ASYNC_CLEAN_UP = "del $ASYNC_RESULT_VAR"
-
 val String.isAsyncCode: Boolean
     get() = "await " in this
 
-fun String.toAsyncCode(): String {
+fun String.toAsyncCode(): Pair<String, String> {
     val lines = this.prependIndent("    ").lines().toMutableList()
     val expression = if (lines.size == 1) "    return ${lines[0].trimStart()}" else lines.joinToString("\n")
+
+    val resultVar = "__async_result_var_${Random.nextInt().absoluteValue}__"
 
     return """
 $NEST_ASYNCIO_SOUCE_CODE
@@ -193,11 +195,11 @@ async def __async_evaluate_expression__():
 $expression
 
 from asyncio import run as __async_run_coro__
-$ASYNC_RESULT_VAR = __async_run_coro__(__async_evaluate_expression__())
+$resultVar = __async_run_coro__(__async_evaluate_expression__())
 
 del __async_run_coro__
 del __async_evaluate_expression__
 del __patch_asyncio__
-"""
+""" to resultVar
 }
 
