@@ -1,14 +1,14 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
     <name>Evaluate async code</name>
-    <version>1.1</version>
+    <version>1.2</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
         Finally, you can use await in evaluate expression
     </description>
 
-    <change-notes>Fix bug when evaluate expression failed because of AttributeError</change-notes>
+    <change-notes>Fix bug when variable assigment doesn't available in caller scope</change-notes>
 
     <idea-version since-build="192"/>
     <depends>com.intellij.modules.lang</depends>

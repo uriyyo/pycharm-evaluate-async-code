@@ -184,22 +184,22 @@ val String.isAsyncCode: Boolean
 
 fun String.toAsyncCode(): Pair<String, String> {
     val lines = this.prependIndent("    ").lines().toMutableList()
-    val expression = if (lines.size == 1) "    return ${lines[0].trimStart()}" else lines.joinToString("\n")
-
     val resultVar = "__async_result_var_${Random.nextInt().absoluteValue}__"
+
+    lines[lines.lastIndex] = "    $resultVar = ${lines[lines.lastIndex]}"
+    val expression = lines.joinToString("\n")
 
     return """
 $NEST_ASYNCIO_SOUCE_CODE
 
 async def __async_evaluate_expression__():
 $expression
+    return locals()
 
 from asyncio import run as __async_run_coro__
-$resultVar = __async_run_coro__(__async_evaluate_expression__())
+locals().update(__async_run_coro__(__async_evaluate_expression__()))
 
-del __async_run_coro__
-del __async_evaluate_expression__
-del __patch_asyncio__
+del __async_run_coro__, __async_evaluate_expression__, __patch_asyncio__
 """ to resultVar
 }
 
