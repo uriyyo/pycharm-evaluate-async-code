@@ -2,6 +2,9 @@ package com.uriyyo.evaluate_async_code
 
 import com.jetbrains.python.psi.LanguageLevel
 
+val String.isAsyncCode
+    get() = "async" in this || "await" in this
+
 fun isSupportedVersion(version: String?): Boolean =
         version !== null && LanguageLevel
                 .fromPythonVersion(version.split(" ").last())
