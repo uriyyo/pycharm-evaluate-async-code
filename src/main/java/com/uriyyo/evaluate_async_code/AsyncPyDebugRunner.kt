@@ -31,7 +31,7 @@ class AsyncPyDebugRunner : PyDebugRunner() {
                             .printToString()
                             .replace("\n", "\\n")
 
-                    val code = "__async_result__ = __async_eval__($fixedExpression, globals(), locals())"
+                    val code = "__async_result__ = __import__('sys').__async_eval__($fixedExpression, globals(), locals())"
                     super.evaluate(code, true, doTrunc)
 
                     return super.evaluate("__async_result__", false, doTrunc)

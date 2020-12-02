@@ -194,9 +194,9 @@ def __patcher__():
         if not code:
             return code
 
-        if "await" in code or "async" in code:
+        if "__async_eval__" not in code and ("await" in code or "async" in code):
             code = code.replace("@" + "LINE" + "@", "\n")
-            return f"__async_eval__({code!r}, globals(), locals())"
+            return f"__import('sys')__.__async_eval__({code!r}, globals(), locals())"
 
         return code
 
@@ -250,7 +250,7 @@ __async_exec_func_result__ = asyncio.get_event_loop().run_until_complete(__async
         exec(code, _globals, _updated_locals)
         return _updated_locals['__async_exec_func_result__']
 
-    __builtins__.__async_eval__ = async_eval
+    sys.__async_eval__ = async_eval
 
     def _pydevd_patch():
         # Add ability to evaluate async expression
@@ -259,7 +259,7 @@ __async_exec_func_result__ = asyncio.get_event_loop().run_until_complete(__async
         original_evaluate = pydevd_vars.evaluate_expression
 
         def evaluate_expression(thread_id: int, frame_id: int, expression: str, doExec: bool):
-            return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)
+            return original_evaluate(thread_id, frame_id, expression, doExec)
 
         pydevd_vars.evaluate_expression = evaluate_expression
 

@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
     <name>Evaluate async code</name>
-    <version>1.4</version>
+    <version>1.5</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
