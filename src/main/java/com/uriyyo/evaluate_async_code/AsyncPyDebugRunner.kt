@@ -6,7 +6,6 @@ import com.jetbrains.python.debugger.PyDebugProcess
 import com.jetbrains.python.debugger.PyDebugRunner
 import com.jetbrains.python.debugger.PyDebugValue
 import com.jetbrains.python.run.PythonCommandLineState
-import com.jetbrains.rd.util.string.printToString
 import java.net.ServerSocket
 
 class AsyncPyDebugRunner : PyDebugRunner() {
@@ -27,9 +26,10 @@ class AsyncPyDebugRunner : PyDebugRunner() {
                     // FIXME: why so terrible? this code must be refactored
                     super.evaluate(PLUGIN, true, true)
 
+                    // TODO: Does Kotlin has smth like python repr?
                     val fixedExpression = expression
-                            .printToString()
-                            .replace("\n", "\\n")
+                            .replace("'''", "\\'\\'\\'")
+                            .let { "'''$it'''" }
 
                     val code = "__async_result__ = __import__('sys').__async_eval__($fixedExpression, globals(), locals())"
                     super.evaluate(code, true, doTrunc)
