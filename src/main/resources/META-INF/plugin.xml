@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
     <name>Evaluate async code</name>
-    <version>1.6</version>
+    <version>1.7</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
@@ -9,7 +9,7 @@
         Currently supports: evaluate an expression, conditional breakpoints, console window.
     </description>
 
-    <change-notes>Fix "Syntax Error" exception when trying to execute async expression with string literals</change-notes>
+    <change-notes>Fix "Syntax Error" exception when trying to execute async expression with python version 3.6</change-notes>
 
     <idea-version since-build="192"/>
     <depends>com.intellij.modules.lang</depends>
