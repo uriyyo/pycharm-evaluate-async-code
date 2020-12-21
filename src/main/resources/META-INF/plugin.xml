@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
     <name>Evaluate async code</name>
-    <version>1.7</version>
+    <version>1.8</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
@@ -9,7 +9,7 @@
         Currently supports: evaluate an expression, conditional breakpoints, console window.
     </description>
 
-    <change-notes>Fix "Syntax Error" exception when trying to execute async expression with python version 3.6</change-notes>
+    <change-notes>Fix issue when plugin blocks running of debugger on windows</change-notes>
 
     <idea-version since-build="192"/>
     <depends>com.intellij.modules.lang</depends>
@@ -18,6 +18,10 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <programRunner implementation="com.uriyyo.evaluate_async_code.AsyncPyDebugRunner" order="first"/>
+
+        <applicationService serviceInterface="com.jetbrains.python.console.PythonConsoleRunnerFactory"
+                            serviceImplementation="com.uriyyo.evaluate_async_code.AsyncPyDebugConsoleRunnerFactory"
+                            overrides="true"/>
     </extensions>
 
     <actions>
