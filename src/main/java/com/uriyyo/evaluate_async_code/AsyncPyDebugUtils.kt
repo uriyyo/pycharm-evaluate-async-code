@@ -1,12 +1,14 @@
 package com.uriyyo.evaluate_async_code
 
 import com.intellij.execution.configurations.ParamsGroup
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.projectRoots.Sdk
-import com.jetbrains.python.PythonHelper
 import com.jetbrains.python.psi.LanguageLevel
 import java.io.File
+import java.nio.file.Paths
 
 const val PYDEVD_ASYNC_DEBUG = "_pydevd_async_debug.py"
+const val PLUGIN_NAME = "evaluate-async-code"
 
 fun <T> (() -> T).memoize(): (() -> T) {
     var result: T? = null
@@ -16,15 +18,15 @@ fun <T> (() -> T).memoize(): (() -> T) {
     }
 }
 
-fun pydevRoot(): String = File(PythonHelper.CONSOLE.asParamString()).parent
-
 val asyncPyDevScript: () -> File = {
-    var script = File(pydevRoot(), PYDEVD_ASYNC_DEBUG)
+    var script = Paths.get(PathManager.getPluginsPath(), PLUGIN_NAME, PYDEVD_ASYNC_DEBUG).toFile()
 
-    if (!script.canWrite())
+    try {
+        script.createNewFile()
+    } catch (e: Exception) {
         script = createTempFile(suffix = ".py")
+    }
 
-    script.createNewFile()
     script.setReadable(true, false)
     script.setWritable(true, false)
     script.writeText(PYDEVD_ASYNC_MAIN_PLUGIN)
@@ -425,7 +427,7 @@ __async_exec_func_result__ = asyncio.get_event_loop().run_until_complete(__async
 
 __patcher__()
 del __patcher__
-"""
+""".trimStart()
 
 val PYDEVD_ASYNC_MAIN_PLUGIN = """
 $PLUGIN
@@ -434,4 +436,4 @@ import sys
 from runpy import run_path
 
 run_path(sys.argv.pop(1), {}, "__main__")
-"""
+""".trimStart()
