@@ -17,20 +17,32 @@ class AsyncPyDebugConsoleRunnerFactory : PydevConsoleRunnerFactory() {
             rerunAction: Consumer<in String>,
             vararg setupFragment: String
     ): PydevConsoleRunner {
-        return object : PydevConsoleRunnerImpl(project, sdk, consoleType, workingDir, envs, settingsProvider, rerunAction, *setupFragment) {
-            override fun doCreateConsoleCmdLine(sdk: Sdk, environmentVariables: MutableMap<String, String>, workingDir: String?, port: Int): GeneralCommandLine =
+        return object : PydevConsoleRunnerImpl(
+                project,
+                sdk,
+                consoleType,
+                workingDir,
+                envs,
+                settingsProvider,
+                rerunAction,
+                *setupFragment
+        ) {
+            override fun doCreateConsoleCmdLine(
+                    sdk: Sdk,
+                    environmentVariables: MutableMap<String, String>,
+                    workingDir: String?,
+                    port: Int
+            ): GeneralCommandLine =
                     super.doCreateConsoleCmdLine(sdk, environmentVariables, workingDir, port)
-                            .also { cli ->
-                                if (isSupportedVersion(sdk.versionString))
-                                    cli
-                                            .parametersList
+                            .apply {
+                                sdk.whenSupport {
+                                    parametersList
                                             .paramsGroups
                                             .firstOrNull { it.id == "Script" }
-                                            ?.let {
-                                                refreshPyDevScript()
-                                                it.addPyDevAsyncWork()
-                                            }
+                                            ?.addPyDevAsyncWork()
+                                }
                             }
         }
     }
+
 }

@@ -6,10 +6,13 @@
 
     <description>
         Finally, you can use async/await during debugging your code.
-        Currently supports: evaluate an expression, conditional breakpoints, console window.
+        Currently supports: evaluate an expression, conditional breakpoints, console window, Python Console.
     </description>
 
-    <change-notes>Fix issue when plugin blocks running of debugger on windows</change-notes>
+    <change-notes>
+        Fix issue when plugin blocks running of debugger on windows.
+        Add ability to use await inside Python Console.
+    </change-notes>
 
     <idea-version since-build="192"/>
     <depends>com.intellij.modules.lang</depends>

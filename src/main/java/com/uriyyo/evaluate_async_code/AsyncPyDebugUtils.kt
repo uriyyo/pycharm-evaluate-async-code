@@ -1,25 +1,37 @@
 package com.uriyyo.evaluate_async_code
 
 import com.intellij.execution.configurations.ParamsGroup
+import com.intellij.openapi.projectRoots.Sdk
 import com.jetbrains.python.PythonHelper
 import com.jetbrains.python.psi.LanguageLevel
-import org.codehaus.plexus.interpolation.os.Os
 import java.io.File
 
 const val PYDEVD_ASYNC_DEBUG = "_pydevd_async_debug.py"
 
+fun <T> (() -> T).memoize(): (() -> T) {
+    var result: T? = null
+    return {
+        result = result ?: this()
+        result!!
+    }
+}
+
 fun pydevRoot(): String = File(PythonHelper.CONSOLE.asParamString()).parent
 
-fun asyncPyDevScript(): File = File(pydevRoot(), PYDEVD_ASYNC_DEBUG)
+val asyncPyDevScript: () -> File = {
+    var script = File(pydevRoot(), PYDEVD_ASYNC_DEBUG)
 
-fun refreshPyDevScript() {
-    val file = asyncPyDevScript()
+    if (!script.canWrite())
+        script = createTempFile(suffix = ".py")
 
-    file.writeText(PYDEVD_ASYNC_MAIN_PLUGIN)
-    file.setExecutable(true, false)
-    file.setWritable(true, false)
-    file.setReadable(true, false)
-}
+    script.createNewFile()
+    script.setReadable(true, false)
+    script.setWritable(true, false)
+    script.writeText(PYDEVD_ASYNC_MAIN_PLUGIN)
+
+    script
+}.memoize()
+
 
 fun ParamsGroup.addPyDevAsyncWork() {
     this.parametersList.addAt(0, asyncPyDevScript().absolutePath)
@@ -29,6 +41,11 @@ fun isSupportedVersion(version: String?): Boolean =
         version !== null && LanguageLevel
                 .fromPythonVersion(version.split(" ").last())
                 ?.isAtLeast(LanguageLevel.PYTHON36) == true
+
+fun Sdk.whenSupport(block: () -> Unit) {
+    if (isSupportedVersion(this.versionString))
+        block()
+}
 
 val PLUGIN = """
 def __patcher__():

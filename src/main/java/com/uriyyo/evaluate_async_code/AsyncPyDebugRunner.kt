@@ -7,12 +7,18 @@ import com.jetbrains.python.debugger.PyDebugRunner
 import com.jetbrains.python.run.PythonCommandLineState
 
 class AsyncPyDebugRunner : PyDebugRunner() {
-    override fun configureDebugParameters(project: Project, debugParams: ParamsGroup, pyState: PythonCommandLineState, cmd: GeneralCommandLine) {
-        if (isSupportedVersion(pyState.sdk?.versionString)) {
-            refreshPyDevScript()
+
+    override fun configureDebugParameters(
+            project: Project,
+            debugParams: ParamsGroup,
+            pyState: PythonCommandLineState,
+            cmd: GeneralCommandLine
+    ) {
+        pyState.sdk?.whenSupport {
             debugParams.addPyDevAsyncWork()
         }
 
         super.configureDebugParameters(project, debugParams, pyState, cmd)
     }
+
 }
