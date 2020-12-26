@@ -3,12 +3,12 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     java
     kotlin("jvm") version "1.3.61"
-    id("org.jetbrains.intellij") version "0.4.16"
+    id("org.jetbrains.intellij") version "0.6.3"
 }
 
 
 group = "com.uriyyo.evaluate_async_code"
-version = "1.8"
+version = "1.9"
 
 repositories {
     mavenCentral()
@@ -25,7 +25,7 @@ configure<JavaPluginConvention> {
 }
 
 tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "11"
+    kotlinOptions.jvmTarget = "1.8"
 }
 
 

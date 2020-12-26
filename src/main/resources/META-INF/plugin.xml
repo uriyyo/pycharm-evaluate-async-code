@@ -1,17 +1,16 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
     <name>Evaluate async code</name>
-    <version>1.8</version>
+    <version>1.9</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
         Finally, you can use async/await during debugging your code.
-        Currently supports: evaluate an expression, conditional breakpoints, console window, Python Console.
+        Currently supports: evaluate an expression, conditional breakpoints, console window, python console.
     </description>
 
     <change-notes>
-        Fix issue when plugin blocks running of debugger on windows.
-        Add ability to use await inside Python Console.
+        Fix issue when plugin can't evaluate code when using newly created event loop.
     </change-notes>
 
     <idea-version since-build="192"/>
