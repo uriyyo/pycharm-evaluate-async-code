@@ -21,7 +21,7 @@ PLUGIN_UPDATE_CODE_REGEX: Pattern[str] = re.compile(
 err = partial(click.secho, fg="red", err=True)
 
 
-def cli_exit(code: int = 0) -> NoReturn:
+def cli_exit(code: int = 128) -> NoReturn:
     raise Exit(code)
 
 
@@ -31,7 +31,7 @@ def find_path(pattern: str) -> Path:
         return path
     except ValueError:
         err(f"Can't resolve path with pattern {pattern}")
-        cli_exit(128)
+        cli_exit()
 
 
 @click.group()
@@ -48,7 +48,8 @@ def plugin_entry_point(check: bool) -> None:
         code: str = PLUGIN_CHECK_CODE_REGEX.search(plugin.read_text("utf-8")).group()
 
         if code.strip() != generate():
-            raise ValueError("Plugin code is outdated")
+            err("Kotlin async-pydevd plugin is outdated, please run 'helpers plugin'")
+            cli_exit()
     else:
         async_pydevd_plugin = f'val PYDEVD_ASYNC_PLUGIN = """\n{generate()}\n""".trimStart()'
 
@@ -106,22 +107,19 @@ def readme_entry_point() -> None:
 
 
 @entry_point.command(name="format")
-def format_entry_point() -> None:
-    subprocess.run(
-        """\
-        isort async-pydevd helpers
-        black async-pydevd helpers -l 100
-        """,
-        shell=True,
-    )
+@click.option("--check", type=bool, is_flag=True, default=False)
+def format_entry_point(check: bool) -> None:
+    if check:
+        isort_check = "--check-only"
+        black_check = "--check"
+    else:
+        isort_check = ""
+        black_check = ""
 
-
-@entry_point.command(name="format-check")
-def format_check_entry_point() -> None:
     res = subprocess.run(
-        """\
-        isort async-pydevd helpers --check-only
-        black async-pydevd helpers -l 100 --check
+        f"""\
+        isort async-pydevd helpers {isort_check}
+        black async-pydevd helpers -l 100 {black_check}
         """,
         shell=True,
     )
