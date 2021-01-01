@@ -1,19 +1,29 @@
 import asyncio
 import functools
 import sys
+from asyncio import AbstractEventLoop
+from typing import Callable
+
+try:
+    from nest_asyncio import _patch_loop, apply
+except ImportError:  # pragma: no cover
+    pass
 
 
 def _patch_asyncio_set_get_new():
     if sys.platform.lower().startswith("win"):
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except AttributeError:
+            pass
 
     apply()
 
-    def _patch_loop_if_not_patched(loop):
+    def _patch_loop_if_not_patched(loop: AbstractEventLoop):
         if not hasattr(loop, "_nest_patched"):
             _patch_loop(loop)
 
-    def _patch_asyncio_api(func):
+    def _patch_asyncio_api(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             loop = func(*args, **kwargs)
@@ -28,7 +38,7 @@ def _patch_asyncio_set_get_new():
     _set_event_loop = asyncio.set_event_loop
 
     @functools.wraps(asyncio.set_event_loop)
-    def set_loop_wrapper(loop):
+    def set_loop_wrapper(loop: AbstractEventLoop) -> None:
         _patch_loop_if_not_patched(loop)
         _set_event_loop(loop)
 

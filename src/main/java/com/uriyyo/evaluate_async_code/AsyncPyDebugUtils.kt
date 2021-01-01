@@ -288,19 +288,29 @@ def _patch_tornado():
 import asyncio
 import functools
 import sys
+from asyncio import AbstractEventLoop
+from typing import Callable
+
+try:
+    from nest_asyncio import _patch_loop, apply
+except ImportError:
+    pass
 
 
 def _patch_asyncio_set_get_new():
     if sys.platform.lower().startswith("win"):
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except AttributeError:
+            pass
 
     apply()
 
-    def _patch_loop_if_not_patched(loop):
+    def _patch_loop_if_not_patched(loop: AbstractEventLoop):
         if not hasattr(loop, "_nest_patched"):
             _patch_loop(loop)
 
-    def _patch_asyncio_api(func):
+    def _patch_asyncio_api(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             loop = func(*args, **kwargs)
@@ -315,7 +325,7 @@ def _patch_asyncio_set_get_new():
     _set_event_loop = asyncio.set_event_loop
 
     @functools.wraps(asyncio.set_event_loop)
-    def set_loop_wrapper(loop):
+    def set_loop_wrapper(loop: AbstractEventLoop) -> None:
         _patch_loop_if_not_patched(loop)
         _set_event_loop(loop)
 
@@ -324,81 +334,81 @@ def _patch_asyncio_set_get_new():
 
 _patch_asyncio_set_get_new()
 
-import ast
+import inspect
 import sys
 import textwrap
+import types
+from itertools import takewhile
+from typing import Any, Optional
 
+from _pydevd_bundle.pydevd_save_locals import save_locals
 
-# Async equivalent of builtin eval function
-def async_eval(expr: str, _globals: dict = None, _locals: dict = None):
-    if _locals is None:
-        _locals = {}
+_ASYNC_EVAL_CODE_TEMPLATE = '''\
+__locals__ = locals()
 
-    if _globals is None:
-        _globals = {}
-
-    expr = textwrap.indent(expr, "    ")
-    expr = f"async def _():\n{expr}"
-
-    parsed_stmts = ast.parse(expr).body[0]
-    for node in parsed_stmts.body:
-        ast.increment_lineno(node)
-
-    last_stmt = parsed_stmts.body[-1]
-
-    if isinstance(last_stmt, ast.Expr):
-        return_expr = ast.copy_location(ast.Return(last_stmt), last_stmt)
-        return_expr.value = return_expr.value.value
-        parsed_stmts.body[-1] = return_expr
-
-    parsed_fn = ast.parse(
-        f'''\
-async def __async_exec_func__(__locals__=__locals__):
+async def __async_exec_func():
+    global __locals__
+    locals().update(__locals__)
     try:
-        pass
+{}
     finally:
         __locals__.update(locals())
-        del __locals__['__locals__']
 
-import asyncio
+__async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
 
-__async_exec_func_result__ = asyncio.get_event_loop().run_until_complete(__async_exec_func__())
-    '''
-    )
+del __locals__
+del __async_exec_func
+'''
 
-    parsed_fn.body[0].body[0].body = parsed_stmts.body
+
+def _transform_to_async(expr: str) -> str:
+    code = textwrap.indent(expr, " " * 8)
+    code_without_return = _ASYNC_EVAL_CODE_TEMPLATE.format(code)
+
+    *others, last = code.splitlines(keepends=False)
+
+    indent = sum(1 for _ in takewhile(str.isspace, last))
+    last = " " * indent + f"return {last.lstrip()}"
+
+    code_with_return = _ASYNC_EVAL_CODE_TEMPLATE.format("\n".join([*others, last]))
 
     try:
-        code = compile(parsed_fn, filename="<ast>", mode="exec")
-    except (SyntaxError, TypeError):
-        parsed_stmts.body[-1] = last_stmt
-        parsed_fn.body[0].body[0].body = parsed_stmts.body
-        code = compile(parsed_fn, filename="<ast>", mode="exec")
+        compile(code_with_return, "<exec>", "exec")
+        return code_with_return
+    except SyntaxError:
+        return code_without_return
 
-    _updated_locals = {
-        **_locals,
-        "__locals__": _locals,
-    }
-    _updated_globals = {
-        **_globals,
-        **_updated_locals,
-    }
 
-    exec(code, _updated_globals, _updated_locals)
-    return _updated_locals["__async_exec_func_result__"]
+# async equivalent of builtin eval function
+def async_eval(expr: str, _globals: Optional[dict] = None, _locals: Optional[dict] = None) -> Any:
+    caller: types.FrameType = inspect.currentframe().f_back
+
+    if _locals is None:
+        _locals = caller.f_locals
+
+    if _globals is None:
+        _globals = caller.f_globals
+
+    code = _transform_to_async(expr)
+
+    try:
+        exec(code, _globals, _locals)
+        return _locals.pop("__async_exec_func_result__")
+    finally:
+        save_locals(caller)
 
 
 sys.__async_eval__ = async_eval
+
+from typing import Any
+
 
 def is_async_code(code: str) -> bool:
     return "__async_eval__" not in code and ("await" in code or "async" in code)
 
 
 def make_code_async(code: str) -> str:
-    if not code:
-        return code
-
-    if is_async_code(code):
+    if code and is_async_code(code):
         code = code.replace("@" + "LINE" + "@", "\n")
         return f"__import__('sys').__async_eval__({code!r}, globals(), locals())"
 
@@ -411,7 +421,7 @@ from _pydevd_bundle import pydevd_vars
 original_evaluate = pydevd_vars.evaluate_expression
 
 
-def evaluate_expression(thread_id: int, frame_id: int, expression: str, doExec: bool):
+def evaluate_expression(thread_id: int, frame_id: int, expression: str, doExec: bool) -> Any:
     if is_async_code(expression):
         doExec = False
 
@@ -445,7 +455,7 @@ from _pydevd_bundle import pydevd_console_integration
 original_console_exec = pydevd_console_integration.console_exec
 
 
-def console_exec(thread_id: int, frame_id: int, expression: str, dbg):
+def console_exec(thread_id: int, frame_id: int, expression: str, dbg) -> Any:
     return original_console_exec(thread_id, frame_id, make_code_async(expression), dbg)
 
 
@@ -455,7 +465,7 @@ pydevd_console_integration.console_exec = console_exec
 from _pydev_bundle.pydev_console_types import Command
 
 
-def command_run(self):
+def command_run(self) -> None:
     text = make_code_async(self.code_fragment.text)
     symbol = self.symbol_for_fragment(self.code_fragment)
 

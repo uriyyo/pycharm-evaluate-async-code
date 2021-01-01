@@ -1,65 +1,65 @@
-import ast
+import inspect
 import sys
 import textwrap
+import types
+from itertools import takewhile
+from typing import Any, Optional
 
+from _pydevd_bundle.pydevd_save_locals import save_locals
 
-# Async equivalent of builtin eval function
-def async_eval(expr: str, _globals: dict = None, _locals: dict = None):
-    if _locals is None:
-        _locals = {}
+_ASYNC_EVAL_CODE_TEMPLATE = """\
+__locals__ = locals()
 
-    if _globals is None:
-        _globals = {}
-
-    expr = textwrap.indent(expr, "    ")
-    expr = f"async def _():\n{expr}"
-
-    parsed_stmts = ast.parse(expr).body[0]
-    for node in parsed_stmts.body:
-        ast.increment_lineno(node)
-
-    last_stmt = parsed_stmts.body[-1]
-
-    if isinstance(last_stmt, ast.Expr):
-        return_expr = ast.copy_location(ast.Return(last_stmt), last_stmt)
-        return_expr.value = return_expr.value.value
-        parsed_stmts.body[-1] = return_expr
-
-    parsed_fn = ast.parse(
-        f"""\
-async def __async_exec_func__(__locals__=__locals__):
+async def __async_exec_func():
+    global __locals__
+    locals().update(__locals__)
     try:
-        pass
+{}
     finally:
         __locals__.update(locals())
-        del __locals__['__locals__']
 
-import asyncio
+__async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
 
-__async_exec_func_result__ = asyncio.get_event_loop().run_until_complete(__async_exec_func__())
-    """
-    )
+del __locals__
+del __async_exec_func
+"""
 
-    parsed_fn.body[0].body[0].body = parsed_stmts.body
+
+def _transform_to_async(expr: str) -> str:
+    code = textwrap.indent(expr, " " * 8)
+    code_without_return = _ASYNC_EVAL_CODE_TEMPLATE.format(code)
+
+    *others, last = code.splitlines(keepends=False)
+
+    indent = sum(1 for _ in takewhile(str.isspace, last))
+    last = " " * indent + f"return {last.lstrip()}"
+
+    code_with_return = _ASYNC_EVAL_CODE_TEMPLATE.format("\n".join([*others, last]))
 
     try:
-        code = compile(parsed_fn, filename="<ast>", mode="exec")
-    except (SyntaxError, TypeError):
-        parsed_stmts.body[-1] = last_stmt
-        parsed_fn.body[0].body[0].body = parsed_stmts.body
-        code = compile(parsed_fn, filename="<ast>", mode="exec")
+        compile(code_with_return, "<exec>", "exec")
+        return code_with_return
+    except SyntaxError:
+        return code_without_return
 
-    _updated_locals = {
-        **_locals,
-        "__locals__": _locals,
-    }
-    _updated_globals = {
-        **_globals,
-        **_updated_locals,
-    }
 
-    exec(code, _updated_globals, _updated_locals)
-    return _updated_locals["__async_exec_func_result__"]
+# async equivalent of builtin eval function
+def async_eval(expr: str, _globals: Optional[dict] = None, _locals: Optional[dict] = None) -> Any:
+    caller: types.FrameType = inspect.currentframe().f_back
+
+    if _locals is None:
+        _locals = caller.f_locals
+
+    if _globals is None:
+        _globals = caller.f_globals
+
+    code = _transform_to_async(expr)
+
+    try:
+        exec(code, _globals, _locals)
+        return _locals.pop("__async_exec_func_result__")
+    finally:
+        save_locals(caller)
 
 
 sys.__async_eval__ = async_eval
