@@ -1,11 +1,13 @@
 import re
 import subprocess
 import textwrap
+from functools import partial
 from pathlib import Path
-from typing import Pattern
+from typing import NoReturn, Pattern
 
 import click
 from async_pydevd import generate
+from click.exceptions import Exit
 
 PLUGIN_CHECK_CODE_REGEX: Pattern[str] = re.compile(
     r"(?<=val PYDEVD_ASYNC_PLUGIN = \"\"\").*(?=\"\"\")",
@@ -16,6 +18,21 @@ PLUGIN_UPDATE_CODE_REGEX: Pattern[str] = re.compile(
     re.DOTALL,
 )
 
+err = partial(click.secho, fg="red", err=True)
+
+
+def cli_exit(code: int = 0) -> NoReturn:
+    raise Exit(code)
+
+
+def find_path(pattern: str) -> Path:
+    try:
+        path, *_ = Path.cwd().rglob(pattern)
+        return path
+    except ValueError:
+        err(f"Can't resolve path with pattern {pattern}")
+        cli_exit(128)
+
 
 @click.group()
 def entry_point():
@@ -25,8 +42,7 @@ def entry_point():
 @entry_point.command(name="plugin")
 @click.option("--check", type=bool, is_flag=True, default=False)
 def plugin_entry_point(check: bool) -> None:
-    plugin: Path
-    (plugin,) = Path.cwd().rglob("AsyncPyDebugUtils.kt")
+    plugin: Path = find_path("AsyncPyDebugUtils.kt")
 
     if check:
         code: str = PLUGIN_CHECK_CODE_REGEX.search(plugin.read_text("utf-8")).group()
@@ -44,8 +60,6 @@ def plugin_entry_point(check: bool) -> None:
 
 README_SEPARATOR: str = "<!-- Plugin Examples -->"
 
-README: Path = Path(__file__).parent.parent / "README.md"
-
 IMAGES: list[str] = [
     "evaluate_expression.jpeg",
     "conditional_breakpoint.jpeg",
@@ -56,8 +70,7 @@ IMAGES: list[str] = [
 
 @entry_point.command(name="readme")
 def readme_entry_point() -> None:
-    readme: Path
-    (readme,) = Path.cwd().glob("README.md")
+    readme: Path = find_path("README.md")
 
     def generate_html_for_img(img: str) -> str:
         name, *_ = img.split(".")
@@ -104,8 +117,7 @@ def format_entry_point() -> None:
 
 
 @entry_point.command(name="format-check")
-@click.pass_context
-def format_check_entry_point(ctx: click.Context) -> None:
+def format_check_entry_point() -> None:
     res = subprocess.run(
         """\
         isort async-pydevd helpers --check-only
@@ -113,7 +125,7 @@ def format_check_entry_point(ctx: click.Context) -> None:
         """,
         shell=True,
     )
-    ctx.exit(res.returncode)
+    cli_exit(res.returncode)
 
 
 __all__ = ["entry_point"]
