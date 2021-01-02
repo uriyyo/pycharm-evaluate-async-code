@@ -1,3 +1,4 @@
+import ast
 import inspect
 import sys
 import textwrap
@@ -18,16 +19,35 @@ async def __async_exec_func():
     finally:
         __locals__.update(locals())
 
-__async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
-
-del __locals__
-del __async_exec_func
+try:
+    __async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
+finally:
+    del __locals__
+    del __async_exec_func
 """
 
 
 def _transform_to_async(expr: str) -> str:
     code = textwrap.indent(expr, " " * 8)
     code_without_return = _ASYNC_EVAL_CODE_TEMPLATE.format(code)
+
+    node = ast.parse(code_without_return)
+    last_node = node.body[1].body[2].body[-1]
+
+    if isinstance(
+        last_node,
+        (
+            ast.AsyncFor,
+            ast.For,
+            ast.Try,
+            ast.If,
+            ast.While,
+            ast.ClassDef,
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+        ),
+    ):
+        return code_without_return
 
     *others, last = code.splitlines(keepends=False)
 

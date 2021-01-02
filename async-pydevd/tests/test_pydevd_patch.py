@@ -3,6 +3,8 @@ from unittest.mock import MagicMock
 
 from pytest import fixture, mark
 
+from .utils import ctxmanager  # noqa
+
 
 def _as_async(code: str):
     return f"__import__('sys').__async_eval__({code!r}, globals(), locals())"
@@ -27,7 +29,8 @@ params_mark = mark.parametrize(
 
 @params_mark
 def test_evaluate_expression(mocker, code, result):
-    mock: MagicMock = mocker.patch("_pydevd_bundle.pydevd_vars.evaluate_expression")
+    mock_eval: MagicMock = mocker.patch("_pydevd_bundle.pydevd_vars.evaluate_expression")
+    mock_find_frame: MagicMock = mocker.patch("_pydevd_bundle.pydevd_vars.find_frame")
 
     from async_pydevd import pydevd_patch  # noqa # isort:skip
     from _pydevd_bundle.pydevd_vars import evaluate_expression  # isort:skip
@@ -37,12 +40,8 @@ def test_evaluate_expression(mocker, code, result):
 
     do_exec = code != "await foo()"
 
-    mock.assert_called_once_with(
-        thread_id,
-        frame_id,
-        result,
-        do_exec,
-    )
+    mock_eval.assert_called_once_with(thread_id, frame_id, result, do_exec)
+    mock_find_frame.assert_called_once_with(thread_id, frame_id)
 
 
 @params_mark
@@ -101,7 +100,7 @@ def test_make_code_async(code, result):
     "code,result",
     [
         ("await foo()", True),
-        ("[i async for  i in range(10)]", True),
+        ("[i async for i in range(10)]", True),
         ("foo()", False),
         ("__import__('sys').__async_eval__('await foo()')", False),
     ],
@@ -110,3 +109,26 @@ def test_is_code_async(code, result):
     from async_pydevd.pydevd_patch import is_async_code
 
     assert is_async_code(code) == result
+
+
+# issue #6
+def test_evaluate_expression_should_update_locals(mocker):
+    def _with_locals():
+        yield
+        yield
+
+    g = _with_locals()
+
+    mocker.patch("_pydevd_bundle.pydevd_vars.find_frame", return_value=g.gi_frame)
+
+    from async_pydevd.pydevd_patch import evaluate_expression
+
+    evaluate_expression(
+        object(),
+        object(),
+        """async with ctxmanager() as f:    pass""",
+        True,
+    )
+
+    assert "f" in g.gi_frame.f_locals
+    assert g.gi_frame.f_locals["f"] == 10

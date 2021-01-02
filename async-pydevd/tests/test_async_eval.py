@@ -1,38 +1,9 @@
-from typing import Any, AsyncContextManager, AsyncIterator, NoReturn
-
 from async_pydevd.async_eval import async_eval
 from pytest import mark, raises
 
+from .utils import MyException, ctxmanager, generator, raise_exc, regular  # noqa
+
 pytestmark = mark.asyncio
-
-
-class _MyException(Exception):
-    pass
-
-
-async def regular() -> int:
-    return 10
-
-
-async def generator() -> AsyncIterator[int]:
-    for i in range(10):
-        yield i
-
-
-class _AsyncContextManager:
-    async def __aenter__(self) -> int:
-        return 10
-
-    async def __aexit__(self, *_: Any):
-        pass
-
-
-def ctxmanager() -> AsyncContextManager[int]:
-    return _AsyncContextManager()
-
-
-def raise_exc() -> NoReturn:
-    raise _MyException()
 
 
 @mark.parametrize(
@@ -44,6 +15,7 @@ def raise_exc() -> NoReturn:
         ("[i async for i in generator()]", [*range(10)]),
         ("async with ctxmanager():\n    10", 10),
         ("await regular()\nawait regular() * 2", 20),
+        ("async for i in generator():\n    i * 2", None),
     ],
     ids=[
         "literal",
@@ -52,6 +24,7 @@ def raise_exc() -> NoReturn:
         "async-comprehension",
         "async-with",
         "multiline",
+        "async-for",
     ],
 )
 async def test_async_eval(expr, result):
@@ -66,6 +39,7 @@ async def test_async_eval(expr, result):
         ("a = await regular()", 10),
         ("a = [i async for i in generator()]", [*range(10)]),
         ("async with ctxmanager():\n    a = 10", 10),
+        ("async for i in generator():\n    a = i", 9),
     ],
     ids=[
         "literal",
@@ -73,6 +47,7 @@ async def test_async_eval(expr, result):
         "await",
         "async-comprehension",
         "async-with",
+        "async-for",
     ],
 )
 async def test_async_eval_modify_locals(expr, result):
@@ -82,5 +57,5 @@ async def test_async_eval_modify_locals(expr, result):
 
 
 async def test_eval_raise_exc():
-    with raises(_MyException):
+    with raises(MyException):
         async_eval("await raise_exc()")

@@ -334,6 +334,7 @@ def _patch_asyncio_set_get_new():
 
 _patch_asyncio_set_get_new()
 
+import ast
 import inspect
 import sys
 import textwrap
@@ -354,16 +355,35 @@ async def __async_exec_func():
     finally:
         __locals__.update(locals())
 
-__async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
-
-del __locals__
-del __async_exec_func
+try:
+    __async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
+finally:
+    del __locals__
+    del __async_exec_func
 '''
 
 
 def _transform_to_async(expr: str) -> str:
     code = textwrap.indent(expr, " " * 8)
     code_without_return = _ASYNC_EVAL_CODE_TEMPLATE.format(code)
+
+    node = ast.parse(code_without_return)
+    last_node = node.body[1].body[2].body[-1]
+
+    if isinstance(
+        last_node,
+        (
+            ast.AsyncFor,
+            ast.For,
+            ast.Try,
+            ast.If,
+            ast.While,
+            ast.ClassDef,
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+        ),
+    ):
+        return code_without_return
 
     *others, last = code.splitlines(keepends=False)
 
@@ -404,6 +424,7 @@ from typing import Any
 
 
 def is_async_code(code: str) -> bool:
+    # TODO: use node visitor to check if code contains async/await
     return "__async_eval__" not in code and ("await" in code or "async" in code)
 
 
@@ -416,16 +437,23 @@ def make_code_async(code: str) -> str:
 
 
 # 1. Add ability to evaluate async expression
-from _pydevd_bundle import pydevd_vars
+from _pydevd_bundle import pydevd_save_locals, pydevd_vars
 
 original_evaluate = pydevd_vars.evaluate_expression
 
 
-def evaluate_expression(thread_id: int, frame_id: int, expression: str, doExec: bool) -> Any:
+def evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:
     if is_async_code(expression):
         doExec = False
 
-    return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)
+    try:
+        return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)
+    finally:
+        frame = pydevd_vars.find_frame(thread_id, frame_id)
+
+        if frame is not None:
+            pydevd_save_locals.save_locals(frame)
+            del frame
 
 
 pydevd_vars.evaluate_expression = evaluate_expression
@@ -455,7 +483,7 @@ from _pydevd_bundle import pydevd_console_integration
 original_console_exec = pydevd_console_integration.console_exec
 
 
-def console_exec(thread_id: int, frame_id: int, expression: str, dbg) -> Any:
+def console_exec(thread_id: object, frame_id: object, expression: str, dbg) -> Any:
     return original_console_exec(thread_id, frame_id, make_code_async(expression), dbg)
 
 

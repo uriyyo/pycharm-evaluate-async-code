@@ -2,6 +2,7 @@ from typing import Any
 
 
 def is_async_code(code: str) -> bool:
+    # TODO: use node visitor to check if code contains async/await
     return "__async_eval__" not in code and ("await" in code or "async" in code)
 
 
@@ -14,16 +15,23 @@ def make_code_async(code: str) -> str:
 
 
 # 1. Add ability to evaluate async expression
-from _pydevd_bundle import pydevd_vars
+from _pydevd_bundle import pydevd_save_locals, pydevd_vars
 
 original_evaluate = pydevd_vars.evaluate_expression
 
 
-def evaluate_expression(thread_id: int, frame_id: int, expression: str, doExec: bool) -> Any:
+def evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:
     if is_async_code(expression):
         doExec = False
 
-    return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)
+    try:
+        return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)
+    finally:
+        frame = pydevd_vars.find_frame(thread_id, frame_id)
+
+        if frame is not None:
+            pydevd_save_locals.save_locals(frame)
+            del frame
 
 
 pydevd_vars.evaluate_expression = evaluate_expression
@@ -53,7 +61,7 @@ from _pydevd_bundle import pydevd_console_integration
 original_console_exec = pydevd_console_integration.console_exec
 
 
-def console_exec(thread_id: int, frame_id: int, expression: str, dbg) -> Any:
+def console_exec(thread_id: object, frame_id: object, expression: str, dbg) -> Any:
     return original_console_exec(thread_id, frame_id, make_code_async(expression), dbg)
 
 
