@@ -27,13 +27,13 @@ class AsyncPyDebugConsoleRunnerFactory : PydevConsoleRunnerFactory() {
                 rerunAction,
                 *setupFragment
         ) {
-            override fun doCreateConsoleCmdLine(
+            override fun createCommandLine(
                     sdk: Sdk,
                     environmentVariables: MutableMap<String, String>,
                     workingDir: String?,
                     port: Int
             ): GeneralCommandLine =
-                    super.doCreateConsoleCmdLine(sdk, environmentVariables, workingDir, port)
+                    super.createCommandLine(sdk, environmentVariables, workingDir, port)
                             .apply {
                                 sdk.whenSupport {
                                     parametersList
