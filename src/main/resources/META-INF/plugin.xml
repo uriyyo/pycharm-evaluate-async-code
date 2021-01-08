@@ -16,7 +16,6 @@
     <idea-version since-build="192"/>
     <depends>com.intellij.modules.lang</depends>
     <depends>com.intellij.modules.python</depends>
-    <depends>com.intellij.modules.pycharm</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <programRunner implementation="com.uriyyo.evaluate_async_code.AsyncPyDebugRunner" order="first"/>
