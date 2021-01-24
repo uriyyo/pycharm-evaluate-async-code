@@ -19,11 +19,47 @@ async def __async_exec_func():
     finally:
         __locals__.update(locals())
 
+__ctx__ = None
+
 try:
-    __async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func())
+    import contextvars
+
+    async def __async_exec_func_with_ctx(__async_exec_func=__async_exec_func):
+        try:
+            return await __async_exec_func()
+        finally:
+            global __ctx__
+            __ctx__ = contextvars.copy_context()
+
+except ImportError:
+    __async_exec_func_with_ctx = __async_exec_func
+
+try:
+    __async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func_with_ctx())
 finally:
+    if __ctx__ is not None:
+        for var in __ctx__:
+            var.set(__ctx__[var])
+
+        try:
+            del var
+        except NameError:
+            pass
+
+    del __ctx__
     del __locals__
     del __async_exec_func
+    del __async_exec_func_with_ctx
+
+    try:
+        del __builtins__
+    except NameError:
+        pass
+
+    try:
+        del contextvars
+    except NameError:
+        pass
 """
 
 

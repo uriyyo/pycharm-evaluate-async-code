@@ -2,13 +2,16 @@ from asyncio import AbstractEventLoop
 from multiprocessing import Process
 from typing import Callable
 
-from nest_asyncio import apply
+import nest_asyncio
 from pytest import fixture
+
+# issue #7
+nest_asyncio._patch_handle = lambda: None
 
 
 @fixture
 def event_loop(event_loop) -> AbstractEventLoop:
-    apply(event_loop)
+    nest_asyncio.apply(event_loop)
     return event_loop
 
 
