@@ -11,7 +11,7 @@ from _pydevd_bundle.pydevd_save_locals import save_locals
 _ASYNC_EVAL_CODE_TEMPLATE = """\
 __locals__ = locals()
 
-async def __async_exec_func():
+async def __async_exec_func__():
     global __locals__
     locals().update(__locals__)
     try:
@@ -22,20 +22,21 @@ async def __async_exec_func():
 __ctx__ = None
 
 try:
-    import contextvars
-
-    async def __async_exec_func_with_ctx(__async_exec_func=__async_exec_func):
+    async def __async_exec_func__(
+        __async_exec_func__=__async_exec_func__,
+        contextvars=__import__('contextvars'),
+    ):
         try:
-            return await __async_exec_func()
+            return await __async_exec_func__()
         finally:
             global __ctx__
             __ctx__ = contextvars.copy_context()
 
 except ImportError:
-    __async_exec_func_with_ctx = __async_exec_func
+    pass
 
 try:
-    __async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func_with_ctx())
+    __async_exec_func_result__ = __import__('asyncio').get_event_loop().run_until_complete(__async_exec_func__())
 finally:
     if __ctx__ is not None:
         for var in __ctx__:
@@ -48,16 +49,10 @@ finally:
 
     del __ctx__
     del __locals__
-    del __async_exec_func
-    del __async_exec_func_with_ctx
+    del __async_exec_func__
 
     try:
         del __builtins__
-    except NameError:
-        pass
-
-    try:
-        del contextvars
     except NameError:
         pass
 """

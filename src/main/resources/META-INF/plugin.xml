@@ -10,7 +10,7 @@
     </description>
 
     <change-notes>
-        Fix issue when plugin can't evaluate code when using newly created event loop.
+        Add contextvars integration: set, get, resetting using token
     </change-notes>
 
     <idea-version since-build="192"/>
