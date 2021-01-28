@@ -55,11 +55,12 @@ import asyncio.events as events
 import os
 import sys
 import threading
+from contextlib import contextmanager
 from heapq import heappop
 
 
 def apply(loop=None):
-    '''Patch asyncio to make its event loop reentrent.'''
+    '''Patch asyncio to make its event loop reentrant.'''
     loop = loop or asyncio.get_event_loop()
     if not isinstance(loop, asyncio.BaseEventLoop):
         raise ValueError('Can\'t patch loop of type %s' % type(loop))
@@ -69,7 +70,6 @@ def apply(loop=None):
     _patch_asyncio()
     _patch_loop(loop)
     _patch_task()
-    _patch_handle()
     _patch_tornado()
 
 
@@ -97,46 +97,18 @@ def _patch_asyncio():
 
 
 def _patch_loop(loop):
-    '''Patch loop to make it reentrent.'''
+    '''Patch loop to make it reentrant.'''
 
     def run_forever(self):
-        if sys.version_info >= (3, 7, 0):
-            set_coro_tracking = self._set_coroutine_origin_tracking
-        else:
-            set_coro_tracking = self._set_coroutine_wrapper
-
-        self._check_closed()
-        old_thread_id = self._thread_id
-        old_running_loop = events._get_running_loop()
-        set_coro_tracking(self._debug)
-        self._thread_id = threading.get_ident()
-
-        if self._asyncgens is not None:
-            old_agen_hooks = sys.get_asyncgen_hooks()
-            sys.set_asyncgen_hooks(
-                firstiter=self._asyncgen_firstiter_hook,
-                finalizer=self._asyncgen_finalizer_hook)
-        try:
-            events._set_running_loop(self)
+        with manage_run(self), manage_asyncgens(self):
             while True:
                 self._run_once()
                 if self._stopping:
                     break
-        finally:
-            self._stopping = False
-            self._thread_id = old_thread_id
-            events._set_running_loop(old_running_loop)
-            set_coro_tracking(False)
-            if self._asyncgens is not None:
-                sys.set_asyncgen_hooks(*old_agen_hooks)
+        self._stopping = False
 
     def run_until_complete(self, future):
-        old_thread_id = self._thread_id
-        old_running_loop = events._get_running_loop()
-        try:
-            self._check_closed()
-            self._thread_id = threading.get_ident()
-            events._set_running_loop(self)
+        with manage_run(self):
             f = asyncio.ensure_future(future, loop=self)
             if f is not future:
                 f._log_destroy_pending = False
@@ -148,9 +120,6 @@ def _patch_loop(loop):
                 raise RuntimeError(
                     'Event loop stopped before Future completed.')
             return f.result()
-        finally:
-            self._thread_id = old_thread_id
-            events._set_running_loop(old_running_loop)
 
     def _run_once(self):
         '''
@@ -165,8 +134,7 @@ def _patch_loop(loop):
 
         timeout = (
             0 if ready or self._stopping
-            else min(max(0, scheduled[0]._when - now), 86400) if scheduled
-            else 0.01 if self._is_proactorloop
+            else min(max(scheduled[0]._when - now, 0), 86400) if scheduled
             else None)
         event_list = self._selector.select(timeout)
         self._process_events(event_list)
@@ -184,22 +152,64 @@ def _patch_loop(loop):
                 handle._run()
         handle = None
 
+    @contextmanager
+    def manage_run(self):
+        '''Set up the loop for running.'''
+        self._check_closed()
+        old_thread_id = self._thread_id
+        old_running_loop = events._get_running_loop()
+        try:
+            self._thread_id = threading.get_ident()
+            events._set_running_loop(self)
+            self._num_runs_pending += 1
+            if self._is_proactorloop:
+                if self._self_reading_future is None:
+                    self.call_soon(self._loop_self_reading)
+            yield
+        finally:
+            self._thread_id = old_thread_id
+            events._set_running_loop(old_running_loop)
+            self._num_runs_pending -= 1
+            if self._is_proactorloop:
+                if (self._num_runs_pending == 0
+                        and self._self_reading_future is not None):
+                    ov = self._self_reading_future._ov
+                    self._self_reading_future.cancel()
+                    if ov is not None:
+                        self._proactor._unregister(ov)
+                    self._self_reading_future = None
+
+    @contextmanager
+    def manage_asyncgens(self):
+        old_agen_hooks = sys.get_asyncgen_hooks()
+        try:
+            self._set_coroutine_origin_tracking(self._debug)
+            if self._asyncgens is not None:
+                sys.set_asyncgen_hooks(
+                    firstiter=self._asyncgen_firstiter_hook,
+                    finalizer=self._asyncgen_finalizer_hook)
+            yield
+        finally:
+            self._set_coroutine_origin_tracking(False)
+            if self._asyncgens is not None:
+                sys.set_asyncgen_hooks(*old_agen_hooks)
+
     def _check_running(self):
         '''Do not throw exception if loop is already running.'''
         pass
 
     cls = loop.__class__
-    cls._run_once_orig = cls._run_once
-    cls._run_once = _run_once
-    cls._run_forever_orig = cls.run_forever
     cls.run_forever = run_forever
-    cls._run_until_complete_orig = cls.run_until_complete
     cls.run_until_complete = run_until_complete
+    cls._run_once = _run_once
     cls._check_running = _check_running
     cls._check_runnung = _check_running  # typo in Python 3.7 source
     cls._nest_patched = True
+    cls._num_runs_pending = 0
     cls._is_proactorloop = (
             os.name == 'nt' and issubclass(cls, asyncio.ProactorEventLoop))
+    if sys.version_info < (3, 7, 0):
+        cls._set_coroutine_origin_tracking = cls._set_coroutine_wrapper
 
 
 def _patch_task():
@@ -235,45 +245,6 @@ def _patch_task():
         Task._step = step
 
 
-def _patch_handle():
-    '''Patch Handle to allow recursive calls.'''
-
-    def update_from_context(ctx):
-        '''Copy context ctx to currently active context.'''
-        for var in ctx:
-            var.set(ctx[var])
-
-    def run(self):
-        '''
-        Run the callback in a sub-context, then copy any sub-context vars
-        over to the Handle's context.
-        '''
-        try:
-            ctx = self._context.copy()
-            ctx.run(self._callback, *self._args)
-            if ctx:
-                self._context.run(update_from_context, ctx)
-        except (SystemExit, KeyboardInterrupt):
-            raise
-        except BaseException as exc:
-            cb = format_helpers._format_callback_source(
-                self._callback, self._args)
-            msg = 'Exception in callback {}'.format(cb)
-            context = {
-                'message': msg,
-                'exception': exc,
-                'handle': self,
-            }
-            if self._source_traceback:
-                context['source_traceback'] = self._source_traceback
-            self._loop.call_exception_handler(context)
-        self = None
-
-    if sys.version_info >= (3, 7, 0):
-        from asyncio import format_helpers
-        events.Handle._run = run
-
-
 def _patch_tornado():
         '''
         If tornado is imported before nest_asyncio, make tornado aware of
@@ -294,11 +265,6 @@ from typing import Callable
 try:
     from nest_asyncio import _patch_loop, apply
 except ImportError:
-    pass
-
-
-# issue #7
-def _patch_handle() -> None:
     pass
 
 

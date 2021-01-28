@@ -10,11 +10,6 @@ except ImportError:  # pragma: no cover
     pass
 
 
-# issue #7
-def _patch_handle() -> None:  # pragma: no cover
-    pass
-
-
 def _patch_asyncio_set_get_new():
     if sys.platform.lower().startswith("win"):
         try:

@@ -7,8 +7,8 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.6"
-nest-asyncio = "^1.4.3"
-pydevd-pycharm = "^203.6682.179"
+nest-asyncio = "^1.5.1"
+pydevd-pycharm = "^203.7148.72"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.1"

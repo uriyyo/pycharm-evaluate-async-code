@@ -16,8 +16,8 @@ python-versions = "^3.6"
 develop = false
 
 [package.dependencies]
-nest-asyncio = "^1.4.3"
-pydevd-pycharm = "^203.6682.179"
+nest-asyncio = "^1.5.1"
+pydevd-pycharm = "^203.7148.72"
 
 [package.source]
 type = "directory"
@@ -76,7 +76,7 @@ python-versions = "*"
 
 [[package]]
 name = "nest-asyncio"
-version = "1.4.3"
+version = "1.5.1"
 description = "Patch asyncio to allow nested event loops"
 category = "main"
 optional = false
@@ -92,7 +92,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
 name = "pydevd-pycharm"
-version = "203.6682.179"
+version = "203.7148.72"
 description = "PyCharm Debugger (used in PyCharm and PyDev)"
 category = "main"
 optional = false
@@ -157,15 +157,15 @@ mypy-extensions = [
     {file = "mypy_extensions-0.4.3.tar.gz", hash = "sha256:2d82818f5bb3e369420cb3c4060a7970edba416647068eb4c5343488a6c604a8"},
 ]
 nest-asyncio = [
-    {file = "nest_asyncio-1.4.3-py3-none-any.whl", hash = "sha256:dbe032f3e9ff7f120e76be22bf6e7958e867aed1743e6894b8a9585fe8495cc9"},
-    {file = "nest_asyncio-1.4.3.tar.gz", hash = "sha256:eaa09ef1353ebefae19162ad423eef7a12166bcc63866f8bff8f3635353cd9fa"},
+    {file = "nest_asyncio-1.5.1-py3-none-any.whl", hash = "sha256:76d6e972265063fe92a90b9cc4fb82616e07d586b346ed9d2c89a4187acea39c"},
+    {file = "nest_asyncio-1.5.1.tar.gz", hash = "sha256:afc5a1c515210a23c461932765691ad39e8eba6551c055ac8d5546e69250d0aa"},
 ]
 pathspec = [
     {file = "pathspec-0.8.1-py2.py3-none-any.whl", hash = "sha256:aa0cb481c4041bf52ffa7b0d8fa6cd3e88a2ca4879c533c9153882ee2556790d"},
     {file = "pathspec-0.8.1.tar.gz", hash = "sha256:86379d6b86d75816baba717e64b1a3a3469deb93bb76d613c9ce79edc5cb68fd"},
 ]
 pydevd-pycharm = [
-    {file = "pydevd-pycharm-203.6682.179.tar.gz", hash = "sha256:5495c528835ea99e972cfa609d12dedb058d7841b005f886958a24e342668e0a"},
+    {file = "pydevd-pycharm-203.7148.72.tar.gz", hash = "sha256:4f0cc4deefdef8bbdafcb7f24089519ac954cab0162e7b765e4867d3f6d5d2bd"},
 ]
 regex = [
     {file = "regex-2020.11.13-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:8b882a78c320478b12ff024e81dc7d43c1462aa4a3341c754ee65d857a521f85"},
