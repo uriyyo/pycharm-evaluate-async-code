@@ -11,7 +11,7 @@ nest-asyncio = "^1.5.1"
 pydevd-pycharm = "^203.7148.72"
 
 [tool.poetry.dev-dependencies]
-pytest = "^6.2.1"
+pytest = "^6.2.3"
 pytest-asyncio = "^0.14.0"
 pytest-cov = "^2.10.1"
 pytest-mock = "^3.4.0"
