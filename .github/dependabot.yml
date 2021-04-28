@@ -1,0 +1,16 @@
+version: 2
+updates:
+- package-ecosystem: pip
+  directory: "/async-pydevd"
+  schedule:
+    interval: daily
+    time: "03:00"
+  open-pull-requests-limit: 10
+  ignore:
+  - dependency-name: pydevd-pycharm
+    versions:
+    - 211.6085.15
+    - 211.6305.22
+    - 211.6693.115
+    - 211.6693.23
+    - 211.6693.77
