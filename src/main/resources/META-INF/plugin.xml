@@ -13,7 +13,7 @@
         Fix bug when plugin crash application startup for a application with remote SDK
     </change-notes>
 
-    <idea-version since-build="192"/>
+    <idea-version since-build="193"/>
     <depends>com.intellij.modules.lang</depends>
     <depends>com.intellij.modules.python</depends>
 
