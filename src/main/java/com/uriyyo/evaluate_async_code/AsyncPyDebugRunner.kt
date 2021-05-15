@@ -5,6 +5,7 @@ import com.intellij.execution.configurations.ParamsGroup
 import com.intellij.openapi.project.Project
 import com.jetbrains.python.debugger.PyDebugRunner
 import com.jetbrains.python.run.PythonCommandLineState
+import com.jetbrains.python.sdk.PythonSdkUtil
 
 class AsyncPyDebugRunner : PyDebugRunner() {
 
@@ -15,7 +16,9 @@ class AsyncPyDebugRunner : PyDebugRunner() {
             cmd: GeneralCommandLine
     ) {
         pyState.sdk?.whenSupport {
-            debugParams.addPyDevAsyncWork()
+            if (!PythonSdkUtil.isRemote(pyState.sdk)) {
+                debugParams.addPyDevAsyncWork()
+            }
         }
 
         super.configureDebugParameters(project, debugParams, pyState, cmd)
