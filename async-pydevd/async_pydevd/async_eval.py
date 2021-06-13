@@ -8,7 +8,8 @@ from typing import Any, Optional
 
 from _pydevd_bundle.pydevd_save_locals import save_locals
 
-_ASYNC_EVAL_CODE_TEMPLATE = """\
+_ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(
+    """\
 __locals__ = locals()
 
 async def __async_exec_func__():
@@ -56,6 +57,7 @@ finally:
     except NameError:
         pass
 """
+)
 
 
 def _transform_to_async(expr: str) -> str:

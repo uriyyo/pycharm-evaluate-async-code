@@ -49,6 +49,16 @@ fun Sdk.whenSupport(block: () -> Unit) {
         block()
 }
 
+fun pydevd_async_init() = """
+def _patch_pydevd():
+${PYDEVD_ASYNC_PLUGIN.prependIndent("    ").split("\n").dropLast(5).joinToString("\n")}
+
+import sys
+
+if not hasattr(sys, "__async_eval__"):
+    _patch_pydevd()
+""".trimIndent()
+
 val PYDEVD_ASYNC_PLUGIN = """
 import asyncio
 import asyncio.events as events
@@ -315,7 +325,8 @@ from typing import Any, Optional
 
 from _pydevd_bundle.pydevd_save_locals import save_locals
 
-_ASYNC_EVAL_CODE_TEMPLATE = '''\
+_ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(
+    '''\
 __locals__ = locals()
 
 async def __async_exec_func__():
@@ -363,6 +374,7 @@ finally:
     except NameError:
         pass
 '''
+)
 
 
 def _transform_to_async(expr: str) -> str:
@@ -478,6 +490,14 @@ def line_breakpoint_init(self: LineBreakpoint, *args, **kwargs):
 
 
 LineBreakpoint.__init__ = line_breakpoint_init
+
+# Update old breakpoints
+import gc
+
+for obj in gc.get_objects():
+    if isinstance(obj, LineBreakpoint):
+        normalize_line_breakpoint(obj)
+
 
 # 3. Add ability to use async code in console
 from _pydevd_bundle import pydevd_console_integration

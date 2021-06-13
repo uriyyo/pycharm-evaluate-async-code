@@ -55,6 +55,14 @@ def line_breakpoint_init(self: LineBreakpoint, *args, **kwargs):
 
 LineBreakpoint.__init__ = line_breakpoint_init
 
+# Update old breakpoints
+import gc
+
+for obj in gc.get_objects():
+    if isinstance(obj, LineBreakpoint):
+        normalize_line_breakpoint(obj)
+
+
 # 3. Add ability to use async code in console
 from _pydevd_bundle import pydevd_console_integration
 
