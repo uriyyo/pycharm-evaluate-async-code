@@ -1,4 +1,12 @@
+import asyncio
 from typing import Any
+
+try:
+    _ = _is_async_debug_available  # noqa  # only for testing purposes
+except NameError:
+
+    def _is_async_debug_available(_=None) -> bool:
+        return True
 
 
 def is_async_code(code: str) -> bool:
@@ -22,6 +30,14 @@ original_evaluate = pydevd_vars.evaluate_expression
 
 def evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:
     if is_async_code(expression):
+        if not _is_async_debug_available():
+            cls = asyncio.get_event_loop().__class__
+
+            raise RuntimeError(
+                f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "
+                "Only native asyncio event loop can be used for async code evaluating."
+            )
+
         doExec = False
 
     try:
@@ -58,10 +74,9 @@ LineBreakpoint.__init__ = line_breakpoint_init
 # Update old breakpoints
 import gc
 
-for obj in gc.get_objects():
+for obj in gc.get_objects():  # pragma: no cover
     if isinstance(obj, LineBreakpoint):
         normalize_line_breakpoint(obj)
-
 
 # 3. Add ability to use async code in console
 from _pydevd_bundle import pydevd_console_integration

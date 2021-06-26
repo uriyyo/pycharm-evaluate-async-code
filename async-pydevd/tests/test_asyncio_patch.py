@@ -13,6 +13,10 @@ class CustomEventLoop(BaseEventLoop):
     pass
 
 
+class AsyncioEventLoop(BaseEventLoop):
+    __module__ = "asyncio"
+
+
 def _test_asyncio_patch():
     from async_pydevd import asyncio_patch  # noqa # isort:skip
     from asyncio import get_event_loop, new_event_loop, set_event_loop  # isort:skip
@@ -20,13 +24,27 @@ def _test_asyncio_patch():
     assert _is_patched(get_event_loop())
     assert _is_patched(new_event_loop())
 
-    loop = CustomEventLoop()
+    loop = AsyncioEventLoop()
     set_event_loop(loop)
     assert _is_patched(loop)
 
 
+def _test_asyncio_patch_non_default_loop():
+    from asyncio import get_event_loop, set_event_loop  # isort:skip
+
+    set_event_loop(CustomEventLoop())
+
+    from async_pydevd import asyncio_patch  # noqa # isort:skip
+
+    assert not _is_patched(get_event_loop())
+
+
 def test_asyncio_patch(run_in_process):
     run_in_process(_test_asyncio_patch)
+
+
+def test_asyncio_patch_non_default_loop(run_in_process):
+    run_in_process(_test_asyncio_patch_non_default_loop)
 
 
 def _test_windows_asyncio_policy():

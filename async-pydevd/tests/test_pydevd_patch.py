@@ -1,9 +1,9 @@
 import sys
 from unittest.mock import MagicMock
 
-from pytest import fixture, mark
+from pytest import fixture, mark, raises
 
-from .utils import ctxmanager  # noqa
+from .utils import ctxmanager, regular  # noqa
 
 
 def _as_async(code: str):
@@ -132,3 +132,21 @@ def test_evaluate_expression_should_update_locals(mocker):
 
     assert "f" in g.gi_frame.f_locals
     assert g.gi_frame.f_locals["f"] == 10
+
+
+def test_async_evaluate_is_not_available_for_eventloop(mocker):
+    mocker.patch("async_pydevd.pydevd_patch._is_async_debug_available", return_value=False)
+
+    from async_pydevd.pydevd_patch import evaluate_expression
+
+    with raises(
+        RuntimeError,
+        match=r"^Can not evaluate async code with event loop asyncio.unix_events._UnixSelectorEventLoop. "
+        r"Only native asyncio event loop can be used for async code evaluating.$",
+    ):
+        evaluate_expression(
+            object(),
+            object(),
+            "await regular()",
+            True,
+        )

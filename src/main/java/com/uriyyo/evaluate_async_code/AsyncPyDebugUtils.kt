@@ -49,7 +49,8 @@ fun Sdk.whenSupport(block: () -> Unit) {
         block()
 }
 
-fun pydevd_async_init() = """
+val pydevd_async_init: () -> String = {
+    """
 def _patch_pydevd():
 ${PYDEVD_ASYNC_PLUGIN.prependIndent("    ").split("\n").dropLast(5).joinToString("\n")}
 
@@ -58,6 +59,7 @@ import sys
 if not hasattr(sys, "__async_eval__"):
     _patch_pydevd()
 """.trimIndent()
+}.memoize()
 
 val PYDEVD_ASYNC_PLUGIN = """
 import asyncio
@@ -278,7 +280,17 @@ except ImportError:
     pass
 
 
+def _is_async_debug_available(loop=None) -> bool:
+    if loop is None:
+        loop = asyncio.get_event_loop()
+
+    return loop.__class__.__module__.lstrip("_").startswith("asyncio")
+
+
 def _patch_asyncio_set_get_new():
+    if not _is_async_debug_available():
+        return
+
     if sys.platform.lower().startswith("win"):
         try:
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -288,7 +300,7 @@ def _patch_asyncio_set_get_new():
     apply()
 
     def _patch_loop_if_not_patched(loop: AbstractEventLoop):
-        if not hasattr(loop, "_nest_patched"):
+        if not hasattr(loop, "_nest_patched") and _is_async_debug_available(loop):
             _patch_loop(loop)
 
     def _patch_asyncio_api(func: Callable) -> Callable:
@@ -434,7 +446,15 @@ def async_eval(expr: str, _globals: Optional[dict] = None, _locals: Optional[dic
 
 sys.__async_eval__ = async_eval
 
+import asyncio
 from typing import Any
+
+try:
+    _ = _is_async_debug_available  # noqa  # only for testing purposes
+except NameError:
+
+    def _is_async_debug_available(_=None) -> bool:
+        return True
 
 
 def is_async_code(code: str) -> bool:
@@ -458,6 +478,14 @@ original_evaluate = pydevd_vars.evaluate_expression
 
 def evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:
     if is_async_code(expression):
+        if not _is_async_debug_available():
+            cls = asyncio.get_event_loop().__class__
+
+            raise RuntimeError(
+                f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "
+                "Only native asyncio event loop can be used for async code evaluating."
+            )
+
         doExec = False
 
     try:
@@ -497,7 +525,6 @@ import gc
 for obj in gc.get_objects():
     if isinstance(obj, LineBreakpoint):
         normalize_line_breakpoint(obj)
-
 
 # 3. Add ability to use async code in console
 from _pydevd_bundle import pydevd_console_integration
