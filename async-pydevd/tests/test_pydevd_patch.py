@@ -141,7 +141,7 @@ def test_async_evaluate_is_not_available_for_eventloop(mocker):
 
     with raises(
         RuntimeError,
-        match=r"^Can not evaluate async code with event loop asyncio.unix_events._UnixSelectorEventLoop. "
+        match=r"^Can not evaluate async code with event loop .*\. "
         r"Only native asyncio event loop can be used for async code evaluating.$",
     ):
         evaluate_expression(
