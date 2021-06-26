@@ -40,7 +40,8 @@ class AsyncPyDebugRunner : PyDebugRunner() {
         ) {
             override fun evaluate(expression: String?, execute: Boolean, doTrunc: Boolean): PyDebugValue {
                 if (expression?.let { "async" in it || "await" in it } == true) {
-                    super.evaluate(pydevd_async_init(), true, false);
+                    super.evaluate(pydevd_async_init(), true, false)
+                    return super.evaluate(expression, false, doTrunc)
                 }
 
                 return super.evaluate(expression, execute, doTrunc)
