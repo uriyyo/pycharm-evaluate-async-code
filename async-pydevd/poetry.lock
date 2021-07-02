@@ -106,7 +106,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
 name = "pydevd-pycharm"
-version = "212.4321.41"
+version = "212.4535.11"
 description = "PyCharm Debugger (used in PyCharm and PyDev)"
 category = "main"
 optional = false
@@ -217,7 +217,7 @@ testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.6"
-content-hash = "39ab1f0cbed8e97c4112db5206e509fb1403473f894989eb7d74fbaa7db5eba2"
+content-hash = "d463755d7db2ec3b57f81f2f8f85846b4e465db899826ac288c5ba4fbd5646f6"
 
 [metadata.files]
 atomicwrites = [
@@ -311,7 +311,7 @@ py = [
     {file = "py-1.10.0.tar.gz", hash = "sha256:21b81bda15b66ef5e1a777a21c4dcd9c20ad3efd0b3f817e7a809035269e1bd3"},
 ]
 pydevd-pycharm = [
-    {file = "pydevd-pycharm-212.4321.41.tar.gz", hash = "sha256:3179536a1b538e4e2b7b1aaf3a5b0097324d4d7dbdb45c6932afe47eacfea23c"},
+    {file = "pydevd-pycharm-212.4535.11.tar.gz", hash = "sha256:b182d2196b799be96202abbc6e85d1b43f7bdb98e643cc88cc58d2e631590c1f"},
 ]
 pyparsing = [
     {file = "pyparsing-2.4.7-py2.py3-none-any.whl", hash = "sha256:ef9d7589ef3c200abe66653d3f1ab1033c3c419ae9b9bdb1240a85b024efc88b"},
