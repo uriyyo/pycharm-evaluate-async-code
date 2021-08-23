@@ -1,12 +1,11 @@
 import re
-import subprocess
 import textwrap
 from functools import partial
 from pathlib import Path
 from typing import NoReturn, Pattern
 
 import click
-from async_pydevd import generate
+from async_eval.ext.pydevd import generate_main_script
 from click.exceptions import Exit
 
 PLUGIN_CHECK_CODE_REGEX: Pattern[str] = re.compile(
@@ -43,15 +42,16 @@ def entry_point():
 @click.option("--check", type=bool, is_flag=True, default=False)
 def plugin_entry_point(check: bool) -> None:
     plugin: Path = find_path("AsyncPyDebugUtils.kt")
+    plugin_code = generate_main_script().replace('"""', "'''")
 
     if check:
         code: str = PLUGIN_CHECK_CODE_REGEX.search(plugin.read_text("utf-8")).group()
 
-        if code.strip() != generate():
+        if code.strip() != plugin_code.strip():
             err("Kotlin async-pydevd plugin is outdated, please run 'helpers plugin'")
             cli_exit()
     else:
-        async_pydevd_plugin = f'val PYDEVD_ASYNC_PLUGIN = """\n{generate()}\n""".trimStart()'
+        async_pydevd_plugin = f'val PYDEVD_ASYNC_PLUGIN = """\n{plugin_code}\n""".trimStart()'
 
         plugin.write_text(
             PLUGIN_UPDATE_CODE_REGEX.sub("", plugin.read_text("utf-8")) + async_pydevd_plugin,
@@ -104,26 +104,6 @@ def readme_entry_point() -> None:
         ),
         "utf-8",
     )
-
-
-@entry_point.command(name="format")
-@click.option("--check", type=bool, is_flag=True, default=False)
-def format_entry_point(check: bool) -> None:
-    if check:
-        isort_check = "--check-only"
-        black_check = "--check"
-    else:
-        isort_check = ""
-        black_check = ""
-
-    res = subprocess.run(
-        f"""\
-        isort async-pydevd helpers {isort_check}
-        black async-pydevd helpers -l 100 {black_check}
-        """,
-        shell=True,
-    )
-    cli_exit(res.returncode)
 
 
 __all__ = ["entry_point"]

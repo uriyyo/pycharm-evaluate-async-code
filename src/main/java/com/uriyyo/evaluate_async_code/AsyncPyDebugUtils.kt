@@ -51,8 +51,8 @@ fun Sdk.whenSupport(block: () -> Unit) {
 
 val pydevd_async_init: () -> String = {
     """
-def _patch_pydevd():
-${PYDEVD_ASYNC_PLUGIN.prependIndent("    ").split("\n").dropLast(5).joinToString("\n")}
+def _patch_pydevd(__name__=None):
+${PYDEVD_ASYNC_PLUGIN.prependIndent("    ")}
 
 import sys
 
@@ -63,249 +63,50 @@ if not hasattr(sys, "__async_eval__"):
 
 val PYDEVD_ASYNC_PLUGIN = """
 import asyncio
-import asyncio.events as events
-import os
-import sys
-import threading
-from contextlib import contextmanager
-from heapq import heappop
-
-
-def apply(loop=None):
-    '''Patch asyncio to make its event loop reentrant.'''
-    loop = loop or asyncio.get_event_loop()
-    if not isinstance(loop, asyncio.BaseEventLoop):
-        raise ValueError('Can\'t patch loop of type %s' % type(loop))
-    if getattr(loop, '_nest_patched', None):
-        # already patched
-        return
-    _patch_asyncio()
-    _patch_loop(loop)
-    _patch_task()
-    _patch_tornado()
-
-
-def _patch_asyncio():
-    '''
-    Patch asyncio module to use pure Python tasks and futures,
-    use module level _current_tasks, all_tasks and patch run method.
-    '''
-    def run(future, *, debug=False):
-        loop = asyncio.get_event_loop()
-        loop.set_debug(debug)
-        return loop.run_until_complete(future)
-
-    if sys.version_info >= (3, 6, 0):
-        asyncio.Task = asyncio.tasks._CTask = asyncio.tasks.Task = \
-            asyncio.tasks._PyTask
-        asyncio.Future = asyncio.futures._CFuture = asyncio.futures.Future = \
-            asyncio.futures._PyFuture
-    if sys.version_info < (3, 7, 0):
-        asyncio.tasks._current_tasks = asyncio.tasks.Task._current_tasks  # noqa
-        asyncio.all_tasks = asyncio.tasks.Task.all_tasks  # noqa
-    if not hasattr(asyncio, '_run_orig'):
-        asyncio._run_orig = getattr(asyncio, 'run', None)
-        asyncio.run = run
-
-
-def _patch_loop(loop):
-    '''Patch loop to make it reentrant.'''
-
-    def run_forever(self):
-        with manage_run(self), manage_asyncgens(self):
-            while True:
-                self._run_once()
-                if self._stopping:
-                    break
-        self._stopping = False
-
-    def run_until_complete(self, future):
-        with manage_run(self):
-            f = asyncio.ensure_future(future, loop=self)
-            if f is not future:
-                f._log_destroy_pending = False
-            while not f.done():
-                self._run_once()
-                if self._stopping:
-                    break
-            if not f.done():
-                raise RuntimeError(
-                    'Event loop stopped before Future completed.')
-            return f.result()
-
-    def _run_once(self):
-        '''
-        Simplified re-implementation of asyncio's _run_once that
-        runs handles as they become ready.
-        '''
-        now = self.time()
-        ready = self._ready
-        scheduled = self._scheduled
-        while scheduled and scheduled[0]._cancelled:
-            heappop(scheduled)
-
-        timeout = (
-            0 if ready or self._stopping
-            else min(max(scheduled[0]._when - now, 0), 86400) if scheduled
-            else None)
-        event_list = self._selector.select(timeout)
-        self._process_events(event_list)
-
-        end_time = self.time() + self._clock_resolution
-        while scheduled and scheduled[0]._when < end_time:
-            handle = heappop(scheduled)
-            ready.append(handle)
-
-        for _ in range(len(ready)):
-            if not ready:
-                break
-            handle = ready.popleft()
-            if not handle._cancelled:
-                handle._run()
-        handle = None
-
-    @contextmanager
-    def manage_run(self):
-        '''Set up the loop for running.'''
-        self._check_closed()
-        old_thread_id = self._thread_id
-        old_running_loop = events._get_running_loop()
-        try:
-            self._thread_id = threading.get_ident()
-            events._set_running_loop(self)
-            self._num_runs_pending += 1
-            if self._is_proactorloop:
-                if self._self_reading_future is None:
-                    self.call_soon(self._loop_self_reading)
-            yield
-        finally:
-            self._thread_id = old_thread_id
-            events._set_running_loop(old_running_loop)
-            self._num_runs_pending -= 1
-            if self._is_proactorloop:
-                if (self._num_runs_pending == 0
-                        and self._self_reading_future is not None):
-                    ov = self._self_reading_future._ov
-                    self._self_reading_future.cancel()
-                    if ov is not None:
-                        self._proactor._unregister(ov)
-                    self._self_reading_future = None
-
-    @contextmanager
-    def manage_asyncgens(self):
-        old_agen_hooks = sys.get_asyncgen_hooks()
-        try:
-            self._set_coroutine_origin_tracking(self._debug)
-            if self._asyncgens is not None:
-                sys.set_asyncgen_hooks(
-                    firstiter=self._asyncgen_firstiter_hook,
-                    finalizer=self._asyncgen_finalizer_hook)
-            yield
-        finally:
-            self._set_coroutine_origin_tracking(False)
-            if self._asyncgens is not None:
-                sys.set_asyncgen_hooks(*old_agen_hooks)
-
-    def _check_running(self):
-        '''Do not throw exception if loop is already running.'''
-        pass
-
-    cls = loop.__class__
-    cls.run_forever = run_forever
-    cls.run_until_complete = run_until_complete
-    cls._run_once = _run_once
-    cls._check_running = _check_running
-    cls._check_runnung = _check_running  # typo in Python 3.7 source
-    cls._nest_patched = True
-    cls._num_runs_pending = 0
-    cls._is_proactorloop = (
-            os.name == 'nt' and issubclass(cls, asyncio.ProactorEventLoop))
-    if sys.version_info < (3, 7, 0):
-        cls._set_coroutine_origin_tracking = cls._set_coroutine_wrapper
-
-
-def _patch_task():
-    '''Patch the Task's step and enter/leave methods to make it reentrant.'''
-
-    def step(task, exc=None):
-        curr_task = curr_tasks.get(task._loop)
-        try:
-            step_orig(task, exc)
-        finally:
-            if curr_task is None:
-                curr_tasks.pop(task._loop, None)
-            else:
-                curr_tasks[task._loop] = curr_task
-
-    Task = asyncio.Task
-    if sys.version_info >= (3, 7, 0):
-
-        def enter_task(loop, task):
-            curr_tasks[loop] = task
-
-        def leave_task(loop, task):
-            curr_tasks.pop(loop, None)
-
-        asyncio.tasks._enter_task = enter_task
-        asyncio.tasks._leave_task = leave_task
-        curr_tasks = asyncio.tasks._current_tasks
-        step_orig = Task._Task__step
-        Task._Task__step = step
-    else:
-        curr_tasks = Task._current_tasks
-        step_orig = Task._step
-        Task._step = step
-
-
-def _patch_tornado():
-        '''
-        If tornado is imported before nest_asyncio, make tornado aware of
-        the pure-Python asyncio Future.
-        '''
-        if 'tornado' in sys.modules:
-            import tornado.concurrent as tc
-            tc.Future = asyncio.Future
-            if asyncio.Future not in tc.FUTURES:
-                tc.FUTURES += (asyncio.Future,)
-
-import asyncio
 import functools
 import sys
 from asyncio import AbstractEventLoop
-from typing import Callable
+from typing import Any, Callable
 
 try:
     from nest_asyncio import _patch_loop, apply
-except ImportError:
-    pass
+except ImportError:  # pragma: no cover
+
+    def _noop(*args: Any, **kwargs: Any) -> None:
+        pass
+
+    _patch_loop = apply = _noop
 
 
-def _is_async_debug_available(loop=None) -> bool:
+def is_async_debug_available(loop: Any = None) -> bool:
     if loop is None:
         loop = asyncio.get_event_loop()
 
-    return loop.__class__.__module__.lstrip("_").startswith("asyncio")
+    return bool(loop.__class__.__module__.lstrip("_").startswith("asyncio"))
 
 
-def _patch_asyncio_set_get_new():
-    if not _is_async_debug_available():
+def patch_asyncio() -> None:
+    if hasattr(sys, "__async_eval_patched__"):  # pragma: no cover
+        return
+
+    if not is_async_debug_available():  # pragma: no cover
         return
 
     if sys.platform.lower().startswith("win"):
         try:
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # type: ignore
         except AttributeError:
             pass
 
     apply()
 
-    def _patch_loop_if_not_patched(loop: AbstractEventLoop):
-        if not hasattr(loop, "_nest_patched") and _is_async_debug_available(loop):
+    def _patch_loop_if_not_patched(loop: AbstractEventLoop) -> None:
+        if not hasattr(loop, "_nest_patched") and is_async_debug_available(loop):
             _patch_loop(loop)
 
     def _patch_asyncio_api(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             loop = func(*args, **kwargs)
             _patch_loop_if_not_patched(loop)
             return loop
@@ -322,20 +123,30 @@ def _patch_asyncio_set_get_new():
         _patch_loop_if_not_patched(loop)
         _set_event_loop(loop)
 
-    asyncio.set_event_loop = set_loop_wrapper
+    asyncio.set_event_loop = set_loop_wrapper  # type: ignore
+    sys.__async_eval_patched__ = True  # type: ignore
 
 
-_patch_asyncio_set_get_new()
+patch_asyncio()
+
+__all__ = ["patch_asyncio", "is_async_debug_available"]
 
 import ast
 import inspect
 import sys
 import textwrap
 import types
-from itertools import takewhile
-from typing import Any, Optional
+from typing import Any, Iterable, Optional, Union, cast
 
-from _pydevd_bundle.pydevd_save_locals import save_locals
+try:
+    from _pydevd_bundle.pydevd_save_locals import save_locals
+except ImportError:  # pragma: no cover
+
+    import ctypes
+
+    def save_locals(frame: types.FrameType) -> None:
+        ctypes.pythonapi.PyFrame_LocalsToFast(ctypes.py_object(frame), ctypes.c_int(1))
+
 
 _ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(
     '''\
@@ -345,7 +156,7 @@ async def __async_exec_func__():
     global __locals__
     locals().update(__locals__)
     try:
-{}
+        pass
     finally:
         __locals__.update(locals())
 
@@ -388,46 +199,114 @@ finally:
 '''
 )
 
+if sys.version_info < (3, 7):
 
-def _transform_to_async(expr: str) -> str:
-    code = textwrap.indent(expr, " " * 8)
-    code_without_return = _ASYNC_EVAL_CODE_TEMPLATE.format(code)
+    def _parse_code(code: str) -> ast.AST:
+        code = f"async def _():\n{textwrap.indent(code, '    ')}"
+        func, *_ = cast(Iterable[ast.AsyncFunctionDef], ast.parse(code).body)
+        return ast.Module(func.body)
 
-    node = ast.parse(code_without_return)
-    last_node = node.body[1].body[2].body[-1]
 
-    if isinstance(
-        last_node,
-        (
-            ast.AsyncFor,
-            ast.For,
-            ast.Try,
-            ast.If,
-            ast.While,
-            ast.ClassDef,
-            ast.FunctionDef,
-            ast.AsyncFunctionDef,
-        ),
-    ):
-        return code_without_return
+else:
+    _parse_code = ast.parse
 
-    *others, last = code.splitlines(keepends=False)
 
-    indent = sum(1 for _ in takewhile(str.isspace, last))
-    last = " " * indent + f"return {last.lstrip()}"
+def _compile_ast(node: ast.AST, filename: str = "<eval>", mode: str = "exec") -> types.CodeType:
+    return cast(types.CodeType, compile(node, filename, mode))
 
-    code_with_return = _ASYNC_EVAL_CODE_TEMPLATE.format("\n".join([*others, last]))
+
+ASTWithBody = Union[ast.Module, ast.With, ast.AsyncWith]
+
+
+def _make_stmt_as_return(parent: ASTWithBody, root: ast.AST) -> types.CodeType:
+    node = parent.body[-1]
+
+    if isinstance(node, ast.Expr):
+        parent.body[-1] = ast.copy_location(ast.Return(node.value), node)
 
     try:
-        compile(code_with_return, "<exec>", "exec")
-        return code_with_return
-    except SyntaxError:
-        return code_without_return
+        return _compile_ast(root)
+    except (SyntaxError, TypeError):  # pragma: no cover  # TODO: found case to cover except body
+        parent.body[-1] = node
+        return _compile_ast(root)
+
+
+def _transform_to_async(code: str) -> types.CodeType:
+    base: ast.Module = ast.parse(_ASYNC_EVAL_CODE_TEMPLATE)
+    module: ast.Module = cast(ast.Module, _parse_code(code))
+
+    func: ast.AsyncFunctionDef = cast(ast.AsyncFunctionDef, base.body[1])
+    try_stmt: ast.Try = cast(ast.Try, func.body[-1])
+
+    try_stmt.body = module.body
+
+    parent: ASTWithBody = module
+    while isinstance(parent.body[-1], (ast.AsyncWith, ast.With)):
+        parent = cast(ASTWithBody, parent.body[-1])
+
+    return _make_stmt_as_return(parent, base)
+
+
+class _AsyncNodeFound(Exception):
+    pass
+
+
+class _AsyncCodeVisitor(ast.NodeVisitor):
+    @classmethod
+    def check(cls, code: str) -> bool:
+        try:
+            node = _parse_code(code)
+        except SyntaxError:
+            return False
+
+        try:
+            return bool(cls().visit(node))
+        except _AsyncNodeFound:
+            return True
+
+    def _ignore(self, _: ast.AST) -> Any:
+        return
+
+    def _done(self, _: Optional[ast.AST] = None) -> Any:
+        raise _AsyncNodeFound
+
+    def _visit_gen(self, node: Union[ast.GeneratorExp, ast.ListComp, ast.DictComp, ast.SetComp]) -> Any:
+        if any(gen.is_async for gen in node.generators):
+            self._done()
+
+        super().generic_visit(node)
+
+    def _visit_func(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> Any:
+        # check only args and decorators
+        for n in (node.args, *node.decorator_list):
+            super().generic_visit(n)
+
+    # special check for a function def
+    visit_AsyncFunctionDef = _visit_func
+    visit_FunctionDef = _visit_func
+
+    # no need to check class definitions
+    visit_ClassDef = _ignore  # type: ignore
+
+    # basic async statements
+    visit_AsyncFor = _done  # type: ignore
+    visit_AsyncWith = _done  # type: ignore
+    visit_Await = _done  # type: ignore
+
+    # all kind of a generator/comprehensions (they can be async)
+    visit_GeneratorExp = _visit_gen
+    visit_ListComp = _visit_gen
+    visit_SetComp = _visit_gen
+    visit_DictComp = _visit_gen
+
+
+def is_async_code(code: str) -> bool:
+    return _AsyncCodeVisitor.check(code)
 
 
 # async equivalent of builtin eval function
-def async_eval(expr: str, _globals: Optional[dict] = None, _locals: Optional[dict] = None) -> Any:
-    caller: types.FrameType = inspect.currentframe().f_back
+def async_eval(code: str, _globals: Optional[dict] = None, _locals: Optional[dict] = None) -> Any:
+    caller: types.FrameType = inspect.currentframe().f_back  # type: ignore
 
     if _locals is None:
         _locals = caller.f_locals
@@ -435,31 +314,65 @@ def async_eval(expr: str, _globals: Optional[dict] = None, _locals: Optional[dic
     if _globals is None:
         _globals = caller.f_globals
 
-    code = _transform_to_async(expr)
+    code_obj = _transform_to_async(code)
 
     try:
-        exec(code, _globals, _locals)
+        exec(code_obj, _globals, _locals)
         return _locals.pop("__async_exec_func_result__")
     finally:
         save_locals(caller)
 
 
-sys.__async_eval__ = async_eval
+sys.__async_eval__ = async_eval  # type: ignore
+
+__all__ = ["async_eval", "is_async_code"]
 
 import asyncio
 from typing import Any
 
+
+def _noop(*args: Any, **kwargs: Any) -> Any:  # pragma: no cover
+    return True
+
+
+try:  # pragma: no cover
+    # only for testing purposes
+    _ = is_async_debug_available  # noqa
+    _ = is_async_code  # type: ignore  # noqa
+except NameError:  # pragma: no cover
+    try:
+        from async_eval.async_eval import is_async_code
+        from async_eval.asyncio_patch import is_async_debug_available
+    except ImportError:
+
+        is_async_code = _noop
+        is_async_debug_available = _noop
+
 try:
-    _ = _is_async_debug_available  # noqa  # only for testing purposes
-except NameError:
+    from trio._core._run import GLOBAL_RUN_CONTEXT
 
-    def _is_async_debug_available(_=None) -> bool:
-        return True
+    def is_trio_running() -> bool:
+        return hasattr(GLOBAL_RUN_CONTEXT, "runner")
 
 
-def is_async_code(code: str) -> bool:
-    # TODO: use node visitor to check if code contains async/await
-    return "__async_eval__" not in code and ("await" in code or "async" in code)
+except ImportError:  # pragma: no cover
+    is_trio_running = _noop
+
+
+def verify_async_debug_available() -> None:
+    if is_trio_running():
+        raise RuntimeError(
+            "Can not evaluate async code with trio event loop. "
+            "Only native asyncio event loop can be used for async code evaluating."
+        )
+
+    if not is_async_debug_available():
+        cls = asyncio.get_event_loop().__class__
+
+        raise RuntimeError(
+            f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "
+            "Only native asyncio event loop can be used for async code evaluating."
+        )
 
 
 def make_code_async(code: str) -> str:
@@ -478,14 +391,7 @@ original_evaluate = pydevd_vars.evaluate_expression
 
 def evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:
     if is_async_code(expression):
-        if not _is_async_debug_available():
-            cls = asyncio.get_event_loop().__class__
-
-            raise RuntimeError(
-                f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "
-                "Only native asyncio event loop can be used for async code evaluating."
-            )
-
+        verify_async_debug_available()
         doExec = False
 
     try:
@@ -512,7 +418,7 @@ def normalize_line_breakpoint(line_breakpoint: LineBreakpoint) -> None:
 original_init = LineBreakpoint.__init__
 
 
-def line_breakpoint_init(self: LineBreakpoint, *args, **kwargs):
+def line_breakpoint_init(self: LineBreakpoint, *args: Any, **kwargs: Any) -> None:
     original_init(self, *args, **kwargs)
     normalize_line_breakpoint(self)
 
@@ -522,7 +428,7 @@ LineBreakpoint.__init__ = line_breakpoint_init
 # Update old breakpoints
 import gc
 
-for obj in gc.get_objects():
+for obj in gc.get_objects():  # pragma: no cover
     if isinstance(obj, LineBreakpoint):
         normalize_line_breakpoint(obj)
 
@@ -532,7 +438,7 @@ from _pydevd_bundle import pydevd_console_integration
 original_console_exec = pydevd_console_integration.console_exec
 
 
-def console_exec(thread_id: object, frame_id: object, expression: str, dbg) -> Any:
+def console_exec(thread_id: object, frame_id: object, expression: str, dbg: Any) -> Any:
     return original_console_exec(thread_id, frame_id, make_code_async(expression), dbg)
 
 
@@ -542,7 +448,7 @@ pydevd_console_integration.console_exec = console_exec
 from _pydev_bundle.pydev_console_types import Command
 
 
-def command_run(self) -> None:
+def command_run(self: Command) -> None:
     text = make_code_async(self.code_fragment.text)
     symbol = self.symbol_for_fragment(self.code_fragment)
 
@@ -554,5 +460,7 @@ Command.run = command_run
 import sys
 from runpy import run_path
 
-run_path(sys.argv.pop(1), {}, "__main__")
+if __name__ == "__main__":  # pragma: no cover
+    run_path(sys.argv.pop(1), {}, "__main__")  # pragma: no cover
+
 """.trimStart()
