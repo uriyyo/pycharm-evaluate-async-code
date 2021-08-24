@@ -8,7 +8,7 @@ plugins {
 
 
 group = "com.uriyyo.evaluate_async_code"
-version = "1.14"
+version = "1.15"
 
 repositories {
     mavenCentral()
