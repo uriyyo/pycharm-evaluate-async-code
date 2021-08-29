@@ -1,6 +1,6 @@
 [[package]]
 name = "async-eval"
-version = "0.1.1"
+version = "0.1.2"
 description = "eval async code from sync"
 category = "main"
 optional = false
@@ -44,7 +44,7 @@ python-versions = ">=3.5"
 
 [[package]]
 name = "pydevd-pycharm"
-version = "212.5080.18"
+version = "212.5080.64"
 description = "PyCharm Debugger (used in PyCharm and PyDev)"
 category = "main"
 optional = false
@@ -57,8 +57,8 @@ content-hash = "a504938e6f38a4f1b88e7999d29eeefffb58c5ef78f1febe5adece560b7d0a20
 
 [metadata.files]
 async-eval = [
-    {file = "async_eval-0.1.1-py3-none-any.whl", hash = "sha256:29733a7395a8d7acea2db6a827b8afdc54271e2f584d5d1fca37531da94f6edf"},
-    {file = "async_eval-0.1.1.tar.gz", hash = "sha256:49cb13fab2d49fc5dcaf84612239e5affc32b6d5cab9c09890aba45979117959"},
+    {file = "async_eval-0.1.2-py3-none-any.whl", hash = "sha256:cb1fce301b0ea80902aa7a325f5536e7da167e1b46a04d7a08797c9d56f5c487"},
+    {file = "async_eval-0.1.2.tar.gz", hash = "sha256:8404a3605bc0325797042c5523213de0f57fabaa83a99151cf0f26d8080e0532"},
 ]
 click = [
     {file = "click-8.0.1-py3-none-any.whl", hash = "sha256:fba402a4a47334742d782209a7c79bc448911afe1149d07bdabdf480b3e2f4b6"},
@@ -73,5 +73,5 @@ nest-asyncio = [
     {file = "nest_asyncio-1.5.1.tar.gz", hash = "sha256:afc5a1c515210a23c461932765691ad39e8eba6551c055ac8d5546e69250d0aa"},
 ]
 pydevd-pycharm = [
-    {file = "pydevd-pycharm-212.5080.18.tar.gz", hash = "sha256:ed751da5b7c15e7b16301d84811e736c13e02c791c0eccdf61d01c1f0d18ba17"},
+    {file = "pydevd-pycharm-212.5080.64.tar.gz", hash = "sha256:29b11bf59b5443858020aba575e9fba0891b63f7318d23ef656c379dc1c698b9"},
 ]

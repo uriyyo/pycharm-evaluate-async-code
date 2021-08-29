@@ -356,16 +356,16 @@ except NameError:  # pragma: no cover
 try:
     from trio._core._run import GLOBAL_RUN_CONTEXT
 
-    def is_trio_running() -> bool:
-        return hasattr(GLOBAL_RUN_CONTEXT, "runner")
+    def is_trio_not_running() -> bool:
+        return not hasattr(GLOBAL_RUN_CONTEXT, "runner")
 
 
 except ImportError:  # pragma: no cover
-    is_trio_running = _noop
+    is_trio_not_running = _noop
 
 
 def verify_async_debug_available() -> None:
-    if is_trio_running():
+    if not is_trio_not_running():
         raise RuntimeError(
             "Can not evaluate async code with trio event loop. "
             "Only native asyncio event loop can be used for async code evaluating."
