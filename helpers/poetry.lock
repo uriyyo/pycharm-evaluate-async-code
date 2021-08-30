@@ -1,6 +1,6 @@
 [[package]]
 name = "async-eval"
-version = "0.1.2"
+version = "0.1.3"
 description = "eval async code from sync"
 category = "main"
 optional = false
@@ -57,8 +57,8 @@ content-hash = "a504938e6f38a4f1b88e7999d29eeefffb58c5ef78f1febe5adece560b7d0a20
 
 [metadata.files]
 async-eval = [
-    {file = "async_eval-0.1.2-py3-none-any.whl", hash = "sha256:cb1fce301b0ea80902aa7a325f5536e7da167e1b46a04d7a08797c9d56f5c487"},
-    {file = "async_eval-0.1.2.tar.gz", hash = "sha256:8404a3605bc0325797042c5523213de0f57fabaa83a99151cf0f26d8080e0532"},
+    {file = "async_eval-0.1.3-py3-none-any.whl", hash = "sha256:034b76fa223dee594e9ac4b6e54e20881f816343ff7323d6d6b57233b42cf96f"},
+    {file = "async_eval-0.1.3.tar.gz", hash = "sha256:00bde3924c226e9a32577ced70dd82c431022d94adf4aa3add27c56bc05417d5"},
 ]
 click = [
     {file = "click-8.0.1-py3-none-any.whl", hash = "sha256:fba402a4a47334742d782209a7c79bc448911afe1149d07bdabdf480b3e2f4b6"},
