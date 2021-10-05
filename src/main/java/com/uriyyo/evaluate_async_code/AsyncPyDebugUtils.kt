@@ -280,13 +280,17 @@ from asyncio import AbstractEventLoop
 from typing import Any, Callable
 
 try:
-    from nest_asyncio import _patch_loop, apply
-except ImportError:  # pragma: no cover
+    _ = _patch_loop  # noqa
+    _ = apply  # noqa
+except NameError:
+    try:
+        from nest_asyncio import _patch_loop, apply
+    except ImportError:  # pragma: no cover
 
-    def _noop(*args: Any, **kwargs: Any) -> None:
-        pass
+        def _noop(*args: Any, **kwargs: Any) -> None:
+            pass
 
-    _patch_loop = apply = _noop
+        _patch_loop = apply = _noop
 
 
 def is_async_debug_available(loop: Any = None) -> bool:
@@ -357,6 +361,17 @@ except ImportError:  # pragma: no cover
 
     def save_locals(frame: types.FrameType) -> None:
         ctypes.pythonapi.PyFrame_LocalsToFast(ctypes.py_object(frame), ctypes.c_int(1))
+
+
+try:
+    _ = apply  # noqa
+except NameError:
+    try:
+        from nest_asyncio import apply
+    except ImportError:
+
+        def apply(_: Any = None) -> None:
+            pass
 
 
 _ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(
@@ -517,6 +532,8 @@ def is_async_code(code: str) -> bool:
 
 # async equivalent of builtin eval function
 def async_eval(code: str, _globals: Optional[dict] = None, _locals: Optional[dict] = None) -> Any:
+    apply()  # double check that loop is patched
+
     caller: types.FrameType = inspect.currentframe().f_back  # type: ignore
 
     if _locals is None:

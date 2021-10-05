@@ -1,6 +1,6 @@
 [[package]]
 name = "async-eval"
-version = "0.1.3"
+version = "0.1.5"
 description = "eval async code from sync"
 category = "main"
 optional = false
@@ -8,11 +8,11 @@ python-versions = ">=3.6.1,<4.0.0"
 
 [package.dependencies]
 nest-asyncio = ">=1.5.1,<2.0.0"
-pydevd-pycharm = {version = ">=212.5080.18,<213.0.0", optional = true, markers = "extra == \"pydevd-pycharm\" or extra == \"all\""}
+pydevd-pycharm = {version = ">=212.5080.18,<214.0.0", optional = true, markers = "extra == \"pydevd-pycharm\" or extra == \"all\""}
 
 [package.extras]
-pydevd-pycharm = ["pydevd-pycharm (>=212.5080.18,<213.0.0)"]
-all = ["pydevd-pycharm (>=212.5080.18,<213.0.0)", "trio (>=0.19.0,<0.20.0)"]
+pydevd-pycharm = ["pydevd-pycharm (>=212.5080.18,<214.0.0)"]
+all = ["pydevd-pycharm (>=212.5080.18,<214.0.0)", "trio (>=0.19.0,<0.20.0)"]
 trio = ["trio (>=0.19.0,<0.20.0)"]
 
 [[package]]
@@ -44,7 +44,7 @@ python-versions = ">=3.5"
 
 [[package]]
 name = "pydevd-pycharm"
-version = "212.5080.64"
+version = "213.3714.452"
 description = "PyCharm Debugger (used in PyCharm and PyDev)"
 category = "main"
 optional = false
@@ -57,8 +57,8 @@ content-hash = "a504938e6f38a4f1b88e7999d29eeefffb58c5ef78f1febe5adece560b7d0a20
 
 [metadata.files]
 async-eval = [
-    {file = "async_eval-0.1.3-py3-none-any.whl", hash = "sha256:034b76fa223dee594e9ac4b6e54e20881f816343ff7323d6d6b57233b42cf96f"},
-    {file = "async_eval-0.1.3.tar.gz", hash = "sha256:00bde3924c226e9a32577ced70dd82c431022d94adf4aa3add27c56bc05417d5"},
+    {file = "async_eval-0.1.5-py3-none-any.whl", hash = "sha256:f2c494f76862ccb788ee4dd877f32321a996de38161149c355cc09eae0dbc7b1"},
+    {file = "async_eval-0.1.5.tar.gz", hash = "sha256:f3c9d74917b96d58a9ad1d0803870c501e9b65667fd80b452035e19abb0c27e8"},
 ]
 click = [
     {file = "click-8.0.1-py3-none-any.whl", hash = "sha256:fba402a4a47334742d782209a7c79bc448911afe1149d07bdabdf480b3e2f4b6"},
@@ -73,5 +73,5 @@ nest-asyncio = [
     {file = "nest_asyncio-1.5.1.tar.gz", hash = "sha256:afc5a1c515210a23c461932765691ad39e8eba6551c055ac8d5546e69250d0aa"},
 ]
 pydevd-pycharm = [
-    {file = "pydevd-pycharm-212.5080.64.tar.gz", hash = "sha256:29b11bf59b5443858020aba575e9fba0891b63f7318d23ef656c379dc1c698b9"},
+    {file = "pydevd-pycharm-213.3714.452.tar.gz", hash = "sha256:2684d3e65a2c6487b1b120c8ecba0dd236ee6eb84cab7830b57e9d668ef8d5f9"},
 ]
