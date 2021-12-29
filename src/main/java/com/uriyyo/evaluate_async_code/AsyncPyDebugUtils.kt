@@ -72,7 +72,7 @@ import asyncio.events as events
 import os
 import sys
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from heapq import heappop
 
 
@@ -95,10 +95,21 @@ def _patch_asyncio():
     Patch asyncio module to use pure Python tasks and futures,
     use module level _current_tasks, all_tasks and patch run method.
     '''
-    def run(future, *, debug=False):
-        loop = asyncio.get_event_loop()
+    def run(main, *, debug=False):
+        loop = events._get_running_loop()
+        if not loop:
+            loop = events.new_event_loop()
+            events.set_event_loop(loop)
+            _patch_loop(loop)
         loop.set_debug(debug)
-        return loop.run_until_complete(future)
+        task = asyncio.ensure_future(main)
+        try:
+            return loop.run_until_complete(task)
+        finally:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    loop.run_until_complete(task)
 
     if sys.version_info >= (3, 6, 0):
         asyncio.Task = asyncio.tasks._CTask = asyncio.tasks.Task = \
@@ -106,8 +117,8 @@ def _patch_asyncio():
         asyncio.Future = asyncio.futures._CFuture = asyncio.futures.Future = \
             asyncio.futures._PyFuture
     if sys.version_info < (3, 7, 0):
-        asyncio.tasks._current_tasks = asyncio.tasks.Task._current_tasks  # noqa
-        asyncio.all_tasks = asyncio.tasks.Task.all_tasks  # noqa
+        asyncio.tasks._current_tasks = asyncio.tasks.Task._current_tasks
+        asyncio.all_tasks = asyncio.tasks.Task.all_tasks
     if not hasattr(asyncio, '_run_orig'):
         asyncio._run_orig = getattr(asyncio, 'run', None)
         asyncio.run = run
@@ -143,7 +154,6 @@ def _patch_loop(loop):
         Simplified re-implementation of asyncio's _run_once that
         runs handles as they become ready.
         '''
-        now = self.time()
         ready = self._ready
         scheduled = self._scheduled
         while scheduled and scheduled[0]._cancelled:
@@ -151,7 +161,8 @@ def _patch_loop(loop):
 
         timeout = (
             0 if ready or self._stopping
-            else min(max(scheduled[0]._when - now, 0), 86400) if scheduled
+            else min(max(
+                scheduled[0]._when - self.time(), 0), 86400) if scheduled
             else None)
         event_list = self._selector.select(timeout)
         self._process_events(event_list)
@@ -198,6 +209,9 @@ def _patch_loop(loop):
 
     @contextmanager
     def manage_asyncgens(self):
+        if not hasattr(sys, 'get_asyncgen_hooks'):
+            # Python version is too old.
+            return
         old_agen_hooks = sys.get_asyncgen_hooks()
         try:
             self._set_coroutine_origin_tracking(self._debug)
@@ -279,7 +293,7 @@ import sys
 from asyncio import AbstractEventLoop
 from typing import Any, Callable
 
-try:
+try:  # pragma: no cover
     _ = _patch_loop  # noqa
     _ = apply  # noqa
 except NameError:
@@ -365,7 +379,7 @@ except ImportError:  # pragma: no cover
 
 try:
     _ = apply  # noqa
-except NameError:
+except NameError:  # pragma: no cover
     try:
         from nest_asyncio import apply
     except ImportError:
@@ -431,7 +445,6 @@ if sys.version_info < (3, 7):
         code = f"async def _():\n{textwrap.indent(code, '    ')}"
         func, *_ = cast(Iterable[ast.AsyncFunctionDef], ast.parse(code).body)
         return ast.Module(func.body)
-
 
 else:
     _parse_code = ast.parse
@@ -581,7 +594,6 @@ try:
 
     def is_trio_not_running() -> bool:
         return not hasattr(GLOBAL_RUN_CONTEXT, "runner")
-
 
 except ImportError:  # pragma: no cover
     is_trio_not_running = _noop

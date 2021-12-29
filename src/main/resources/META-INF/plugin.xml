@@ -10,7 +10,7 @@
     </description>
 
     <change-notes>
-        Fix issue when nest-asyncio apply function was set to noop function.
+        Fix compatibility issue with 2021.3 version.
     </change-notes>
 
     <idea-version since-build="193"/>
