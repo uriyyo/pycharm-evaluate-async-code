@@ -78,16 +78,12 @@ from heapq import heappop
 
 def apply(loop=None):
     '''Patch asyncio to make its event loop reentrant.'''
-    loop = loop or asyncio.get_event_loop()
-    if not isinstance(loop, asyncio.BaseEventLoop):
-        raise ValueError('Can\'t patch loop of type %s' % type(loop))
-    if getattr(loop, '_nest_patched', None):
-        # already patched
-        return
     _patch_asyncio()
-    _patch_loop(loop)
     _patch_task()
     _patch_tornado()
+
+    loop = loop or asyncio.get_event_loop()
+    _patch_loop(loop)
 
 
 def _patch_asyncio():
@@ -96,10 +92,11 @@ def _patch_asyncio():
     use module level _current_tasks, all_tasks and patch run method.
     '''
     def run(main, *, debug=False):
-        loop = events._get_running_loop()
-        if not loop:
-            loop = events.new_event_loop()
-            events.set_event_loop(loop)
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             _patch_loop(loop)
         loop.set_debug(debug)
         task = asyncio.ensure_future(main)
@@ -111,6 +108,14 @@ def _patch_asyncio():
                 with suppress(asyncio.CancelledError):
                     loop.run_until_complete(task)
 
+    def _get_event_loop(stacklevel=3):
+        loop = events._get_running_loop()
+        if loop is None:
+            loop = events.get_event_loop_policy().get_event_loop()
+        return loop
+
+    if hasattr(asyncio, '_nest_patched'):
+        return
     if sys.version_info >= (3, 6, 0):
         asyncio.Task = asyncio.tasks._CTask = asyncio.tasks.Task = \
             asyncio.tasks._PyTask
@@ -119,9 +124,12 @@ def _patch_asyncio():
     if sys.version_info < (3, 7, 0):
         asyncio.tasks._current_tasks = asyncio.tasks.Task._current_tasks
         asyncio.all_tasks = asyncio.tasks.Task.all_tasks
-    if not hasattr(asyncio, '_run_orig'):
-        asyncio._run_orig = getattr(asyncio, 'run', None)
-        asyncio.run = run
+    if sys.version_info >= (3, 9, 0):
+        events._get_event_loop = events.get_event_loop = \
+            asyncio.get_event_loop = _get_event_loop
+        _get_event_loop
+    asyncio.run = run
+    asyncio._nest_patched = True
 
 
 def _patch_loop(loop):
@@ -229,18 +237,22 @@ def _patch_loop(loop):
         '''Do not throw exception if loop is already running.'''
         pass
 
+    if hasattr(loop, '_nest_patched'):
+        return
+    if not isinstance(loop, asyncio.BaseEventLoop):
+        raise ValueError('Can\'t patch loop of type %s' % type(loop))
     cls = loop.__class__
     cls.run_forever = run_forever
     cls.run_until_complete = run_until_complete
     cls._run_once = _run_once
     cls._check_running = _check_running
     cls._check_runnung = _check_running  # typo in Python 3.7 source
-    cls._nest_patched = True
     cls._num_runs_pending = 0
     cls._is_proactorloop = (
             os.name == 'nt' and issubclass(cls, asyncio.ProactorEventLoop))
     if sys.version_info < (3, 7, 0):
         cls._set_coroutine_origin_tracking = cls._set_coroutine_wrapper
+    cls._nest_patched = True
 
 
 def _patch_task():
@@ -257,6 +269,8 @@ def _patch_task():
                 curr_tasks[task._loop] = curr_task
 
     Task = asyncio.Task
+    if hasattr(Task, '_nest_patched'):
+        return
     if sys.version_info >= (3, 7, 0):
 
         def enter_task(loop, task):
@@ -274,6 +288,7 @@ def _patch_task():
         curr_tasks = Task._current_tasks
         step_orig = Task._step
         Task._step = step
+    Task._nest_patched = True
 
 
 def _patch_tornado():
@@ -457,20 +472,20 @@ def _compile_ast(node: ast.AST, filename: str = "<eval>", mode: str = "exec") ->
 ASTWithBody = Union[ast.Module, ast.With, ast.AsyncWith]
 
 
-def _make_stmt_as_return(parent: ASTWithBody, root: ast.AST) -> types.CodeType:
+def _make_stmt_as_return(parent: ASTWithBody, root: ast.AST, filename: str) -> types.CodeType:
     node = parent.body[-1]
 
     if isinstance(node, ast.Expr):
         parent.body[-1] = ast.copy_location(ast.Return(node.value), node)
 
     try:
-        return _compile_ast(root)
+        return _compile_ast(root, filename)
     except (SyntaxError, TypeError):  # pragma: no cover  # TODO: found case to cover except body
         parent.body[-1] = node
-        return _compile_ast(root)
+        return _compile_ast(root, filename)
 
 
-def _transform_to_async(code: str) -> types.CodeType:
+def _transform_to_async(code: str, filename: str) -> types.CodeType:
     base: ast.Module = ast.parse(_ASYNC_EVAL_CODE_TEMPLATE)
     module: ast.Module = cast(ast.Module, _parse_code(code))
 
@@ -483,7 +498,7 @@ def _transform_to_async(code: str) -> types.CodeType:
     while isinstance(parent.body[-1], (ast.AsyncWith, ast.With)):
         parent = cast(ASTWithBody, parent.body[-1])
 
-    return _make_stmt_as_return(parent, base)
+    return _make_stmt_as_return(parent, base, filename)
 
 
 class _AsyncNodeFound(Exception):
@@ -544,7 +559,13 @@ def is_async_code(code: str) -> bool:
 
 
 # async equivalent of builtin eval function
-def async_eval(code: str, _globals: Optional[dict] = None, _locals: Optional[dict] = None) -> Any:
+def async_eval(
+    code: str,
+    _globals: Optional[dict] = None,
+    _locals: Optional[dict] = None,
+    *,
+    filename: str = "<eval>",
+) -> Any:
     apply()  # double check that loop is patched
 
     caller: types.FrameType = inspect.currentframe().f_back  # type: ignore
@@ -555,7 +576,7 @@ def async_eval(code: str, _globals: Optional[dict] = None, _locals: Optional[dic
     if _globals is None:
         _globals = caller.f_globals
 
-    code_obj = _transform_to_async(code)
+    code_obj = _transform_to_async(code, filename)
 
     try:
         exec(code_obj, _globals, _locals)
