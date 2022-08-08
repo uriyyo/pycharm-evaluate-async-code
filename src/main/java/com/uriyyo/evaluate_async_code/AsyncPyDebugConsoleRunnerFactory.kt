@@ -1,49 +1,26 @@
 package com.uriyyo.evaluate_async_code
 
-import com.intellij.execution.configurations.GeneralCommandLine
+import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.projectRoots.Sdk
-import com.intellij.util.Consumer
-import com.jetbrains.python.console.*
+import com.jetbrains.python.console.PydevConsoleRunnerFactory
 
 class AsyncPyDebugConsoleRunnerFactory : PydevConsoleRunnerFactory() {
-// FIXME: Resolve compatibility issue
-//
-//    override fun createConsoleRunner(
-//            project: Project,
-//            sdk: Sdk?,
-//            workingDir: String?,
-//            envs: MutableMap<String, String>,
-//            consoleType: PyConsoleType, settingsProvider: PyConsoleOptions.PyConsoleSettings,
-//            rerunAction: Consumer<in String>,
-//            vararg setupFragment: String
-//    ): PydevConsoleRunner {
-//        return object : PydevConsoleRunnerImpl(
-//                project,
-//                sdk,
-//                consoleType,
-//                workingDir,
-//                envs,
-//                settingsProvider,
-//                rerunAction,
-//                *setupFragment
-//        ) {
-//            override fun createCommandLine(
-//                    sdk: Sdk,
-//                    environmentVariables: MutableMap<String, String>,
-//                    workingDir: String?,
-//                    port: Int
-//            ): GeneralCommandLine =
-//                    super.createCommandLine(sdk, environmentVariables, workingDir, port)
-//                            .apply {
-//                                sdk.whenSupport {
-//                                    parametersList
-//                                            .paramsGroups
-//                                            .firstOrNull { it.id == "Script" }
-//                                            ?.addPyDevAsyncWork()
-//                                }
-//                            }
-//        }
-//    }
+    private val frameworkAwareFactory: PydevConsoleRunnerFactory? = loadClass("com.jetbrains.FrameworkAwarePythonConsoleRunnerFactory")
 
+    override fun createConsoleParameters(project: Project, contextModule: Module?): ConsoleParameters {
+        val params = frameworkAwareFactory
+            ?.getMethod<ConsoleParameters>("createConsoleParameters", Project::class.java, Module::class.java)
+            ?.invoke(project, contextModule)
+            ?: super.createConsoleParameters(project, contextModule)
+
+        return ConsoleParameters(
+            params.project,
+            params.sdk,
+            params.workingDir,
+            params.envs,
+            params.consoleType,
+            params.settingsProvider,
+            arrayOf(setupAsyncPyDevScript(), *(params.setupFragment ?: arrayOf())),
+        )
+    }
 }
