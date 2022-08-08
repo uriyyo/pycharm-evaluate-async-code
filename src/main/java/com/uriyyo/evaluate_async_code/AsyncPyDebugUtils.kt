@@ -5,7 +5,8 @@ import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.projectRoots.Sdk
 import com.jetbrains.python.psi.LanguageLevel
 import java.io.File
-import java.nio.file.Paths
+import kotlin.io.path.Path
+import kotlin.io.path.createTempFile
 
 const val PYDEVD_ASYNC_DEBUG = "_pydevd_async_debug.py"
 const val PLUGIN_NAME = "evaluate-async-code"
@@ -19,12 +20,12 @@ fun <T> (() -> T).memoize(): (() -> T) {
 }
 
 val asyncPyDevScript: () -> File = {
-    var script = Paths.get(PathManager.getPluginsPath(), PLUGIN_NAME, PYDEVD_ASYNC_DEBUG).toFile()
+    var script = Path(PathManager.getPluginsPath(), PLUGIN_NAME, PYDEVD_ASYNC_DEBUG).toFile()
 
     try {
         script.createNewFile()
     } catch (e: Exception) {
-        script = createTempFile(suffix = ".py")
+        script = createTempFile(suffix = ".py").toFile()
     }
 
     script.setReadable(true, false)
@@ -306,7 +307,7 @@ import asyncio
 import functools
 import sys
 from asyncio import AbstractEventLoop
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 try:  # pragma: no cover
     _ = _patch_loop  # noqa
@@ -316,17 +317,52 @@ except NameError:
         from nest_asyncio import _patch_loop, apply
     except ImportError:  # pragma: no cover
 
-        def _noop(*args: Any, **kwargs: Any) -> None:
+        def _noop(*_: Any, **__: Any) -> None:
             pass
 
         _patch_loop = apply = _noop
 
 
+try:
+    from trio._core._run import GLOBAL_RUN_CONTEXT
+except ImportError:  # pragma: no cover
+    GLOBAL_RUN_CONTEXT = object()
+
+
+def is_trio_not_running() -> bool:
+    return not hasattr(GLOBAL_RUN_CONTEXT, "runner")
+
+
+def get_current_loop() -> Optional[Any]:  # pragma: no cover
+    try:
+        return asyncio.get_running_loop()  # type: ignore
+    except RuntimeError:
+        return asyncio.new_event_loop()
+    except AttributeError:  # Only for 3.6 case, can be removed in future
+        return asyncio.get_event_loop()
+
+
 def is_async_debug_available(loop: Any = None) -> bool:
     if loop is None:
-        loop = asyncio.get_event_loop()
+        loop = get_current_loop()
 
     return bool(loop.__class__.__module__.lstrip("_").startswith("asyncio"))
+
+
+def verify_async_debug_available() -> None:
+    if not is_trio_not_running():
+        raise RuntimeError(
+            "Can not evaluate async code with trio event loop. "
+            "Only native asyncio event loop can be used for async code evaluating."
+        )
+
+    if not is_async_debug_available():
+        cls = get_current_loop().__class__
+
+        raise RuntimeError(
+            f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "
+            "Only native asyncio event loop can be used for async code evaluating."
+        )
 
 
 def patch_asyncio() -> None:
@@ -373,7 +409,12 @@ def patch_asyncio() -> None:
 
 patch_asyncio()
 
-__all__ = ["patch_asyncio", "is_async_debug_available"]
+__all__ = [
+    "patch_asyncio",
+    "get_current_loop",
+    "is_async_debug_available",
+    "verify_async_debug_available",
+]
 
 import ast
 import inspect
@@ -392,15 +433,25 @@ except ImportError:  # pragma: no cover
         ctypes.pythonapi.PyFrame_LocalsToFast(ctypes.py_object(frame), ctypes.c_int(1))
 
 
+def _noop(*_: Any, **__: Any) -> Any:  # pragma: no cover
+    return None
+
+
+try:
+    _ = verify_async_debug_available  # noqa
+except NameError:  # pragma: no cover
+    try:
+        from async_eval.asyncio_patch import verify_async_debug_available
+    except ImportError:
+        verify_async_debug_available = _noop
+
 try:
     _ = apply  # noqa
 except NameError:  # pragma: no cover
     try:
         from nest_asyncio import apply
     except ImportError:
-
-        def apply(_: Any = None) -> None:
-            pass
+        apply = _noop
 
 
 _ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(
@@ -566,6 +617,7 @@ def async_eval(
     *,
     filename: str = "<eval>",
 ) -> Any:
+    verify_async_debug_available()
     apply()  # double check that loop is patched
 
     caller: types.FrameType = inspect.currentframe().f_back  # type: ignore
@@ -589,51 +641,24 @@ sys.__async_eval__ = async_eval  # type: ignore
 
 __all__ = ["async_eval", "is_async_code"]
 
-import asyncio
 from typing import Any
 
 
-def _noop(*args: Any, **kwargs: Any) -> Any:  # pragma: no cover
-    return True
+def _noop(*_: Any, **__: Any) -> Any:  # pragma: no cover
+    return False
 
 
 try:  # pragma: no cover
     # only for testing purposes
-    _ = is_async_debug_available  # noqa
-    _ = is_async_code  # type: ignore  # noqa
+    _ = is_async_code  # noqa
+    _ = verify_async_debug_available  # type: ignore  # noqa
 except NameError:  # pragma: no cover
     try:
         from async_eval.async_eval import is_async_code
-        from async_eval.asyncio_patch import is_async_debug_available
+        from async_eval.asyncio_patch import verify_async_debug_available
     except ImportError:
-
         is_async_code = _noop
-        is_async_debug_available = _noop
-
-try:
-    from trio._core._run import GLOBAL_RUN_CONTEXT
-
-    def is_trio_not_running() -> bool:
-        return not hasattr(GLOBAL_RUN_CONTEXT, "runner")
-
-except ImportError:  # pragma: no cover
-    is_trio_not_running = _noop
-
-
-def verify_async_debug_available() -> None:
-    if not is_trio_not_running():
-        raise RuntimeError(
-            "Can not evaluate async code with trio event loop. "
-            "Only native asyncio event loop can be used for async code evaluating."
-        )
-
-    if not is_async_debug_available():
-        cls = asyncio.get_event_loop().__class__
-
-        raise RuntimeError(
-            f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "
-            "Only native asyncio event loop can be used for async code evaluating."
-        )
+        verify_async_debug_available = _noop
 
 
 def make_code_async(code: str) -> str:
