@@ -11,6 +11,29 @@ import kotlin.io.path.createTempFile
 const val PYDEVD_ASYNC_DEBUG = "_pydevd_async_debug.py"
 const val PLUGIN_NAME = "evaluate-async-code"
 
+fun<R> loadClass(name: String): R? {
+    return try {
+        Class.forName(name)
+            .getDeclaredConstructor()
+            .newInstance() as R
+    } catch (e: ClassNotFoundException) {
+        null
+    }
+}
+
+interface MethodCall<R> {
+    fun invoke(vararg args: Any?):R
+}
+
+fun<R> Any.getMethod(method: String, vararg argsClasses: Class<*>): MethodCall<R> {
+    val obj = this
+    val m = this.javaClass.getDeclaredMethod(method, *argsClasses).apply{ isAccessible = true}
+
+    return object : MethodCall<R> {
+        override fun invoke(vararg args: Any?): R = m.invoke(obj, *args) as R
+    }
+}
+
 fun <T> (() -> T).memoize(): (() -> T) {
     var result: T? = null
     return {
@@ -33,6 +56,16 @@ val asyncPyDevScript: () -> File = {
     script.writeText(PYDEVD_ASYNC_PLUGIN)
 
     script
+}.memoize()
+
+
+val setupAsyncPyDevScript: () -> String = {
+    """
+    ns = {}
+    with open('''${asyncPyDevScript().absolutePath}''') as f:
+       exec(f.read(), ns, ns)
+    del f, ns
+    """.trimIndent()
 }.memoize()
 
 
