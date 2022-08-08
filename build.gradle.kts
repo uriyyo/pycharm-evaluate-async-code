@@ -1,9 +1,7 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     java
-    kotlin("jvm") version "1.3.61"
-    id("org.jetbrains.intellij") version "0.6.3"
+    kotlin("jvm") version "1.6.0"
+    id("org.jetbrains.intellij") version "1.8.0"
 }
 
 
@@ -20,24 +18,23 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.3.1")
 }
 
-configure<JavaPluginConvention> {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-}
-
-tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "1.8"
-}
-
 
 intellij {
-    version = project.properties["ideaVersion"].toString()
-    pluginName = "evaluate-async-code"
-    downloadSources = project.properties["downloadIdeaSources"] == "true"
-    updateSinceUntilBuild = false
-    setPlugins("terminal")
+    version.set(project.properties["ideaVersion"].toString())
+    pluginName.set("evaluate-async-code")
+    downloadSources.set(project.properties["downloadIdeaSources"] == "true")
+    updateSinceUntilBuild.set(false)
+    plugins.add("terminal")
     if ("PC" in project.properties["ideaVersion"].toString()) {
-        setPlugins("python-ce")
+        plugins.add("python-ce")
     } else if ("PY" in project.properties["ideaVersion"].toString()) {
-        setPlugins("python")
+        plugins.add("python")
+    }
+}
+
+tasks {
+    withType<JavaCompile> {
+        sourceCompatibility = "11"
+        targetCompatibility = "11"
     }
 }
