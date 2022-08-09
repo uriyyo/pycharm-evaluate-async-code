@@ -5,16 +5,18 @@ import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.projectRoots.Sdk
 import com.jetbrains.python.psi.LanguageLevel
 import java.io.File
+import java.lang.reflect.Method
 import kotlin.io.path.Path
 import kotlin.io.path.createTempFile
 
 const val PYDEVD_ASYNC_DEBUG = "_pydevd_async_debug.py"
 const val PLUGIN_NAME = "evaluate-async-code"
 
-fun<R> loadClass(name: String): R? {
+inline fun <reified R> loadClass(name: String): R? {
     return try {
         Class.forName(name)
             .getDeclaredConstructor()
+            .also { it.isAccessible = true }
             .newInstance() as R
     } catch (e: ClassNotFoundException) {
         null
@@ -22,15 +24,44 @@ fun<R> loadClass(name: String): R? {
 }
 
 interface MethodCall<R> {
-    fun invoke(vararg args: Any?):R
+    fun invoke(vararg args: Any?): R
 }
 
-fun<R> Any.getMethod(method: String, vararg argsClasses: Class<*>): MethodCall<R> {
+inline fun <reified R> Any.getMethod(method: String, vararg argsClasses: Class<*>): MethodCall<R> {
     val obj = this
-    val m = this.javaClass.getDeclaredMethod(method, *argsClasses).apply{ isAccessible = true}
+    val m = this.javaClass.getDeclaredMethod(method, *argsClasses).apply { isAccessible = true }
 
     return object : MethodCall<R> {
         override fun invoke(vararg args: Any?): R = m.invoke(obj, *args) as R
+    }
+}
+
+fun allMethods(clazz: Class<*>): Sequence<Method> = sequence {
+    var node = clazz
+    while (node != Object::class.java) {
+        node.declaredMethods.forEach { yield(it) }
+        node = node.superclass
+    }
+}
+
+inline fun <reified R> Any.getMethodByName(method: String): MethodCall<R> {
+    val obj = this
+    val methods = allMethods(javaClass)
+        .filter { it.name == method }
+        .onEach { it.isAccessible = true }
+        .toList()
+
+    return object : MethodCall<R> {
+        override fun invoke(vararg args: Any?): R {
+            for (m in methods) {
+                try {
+                    return m.invoke(obj, *args) as R
+                } catch (e: IllegalArgumentException) {
+                }
+            }
+
+            throw NoSuchMethodException(method)
+        }
     }
 }
 
@@ -64,8 +95,12 @@ val setupAsyncPyDevScript: () -> String = {
     ns = {}
     with open('''${asyncPyDevScript().absolutePath}''') as f:
        exec(f.read(), ns, ns)
-    del f, ns
     """.trimIndent()
+}.memoize()
+
+
+val cleanupAsyncPyDevScript: () -> String = {
+    "del f, ns"
 }.memoize()
 
 
@@ -74,9 +109,9 @@ fun ParamsGroup.addPyDevAsyncWork() {
 }
 
 fun isSupportedVersion(version: String?): Boolean =
-        version !== null && LanguageLevel
-                .fromPythonVersion(version.split(" ").last())
-                ?.isAtLeast(LanguageLevel.PYTHON36) == true
+    version !== null && LanguageLevel
+        .fromPythonVersion(version.split(" ").last())
+        ?.isAtLeast(LanguageLevel.PYTHON37) == true
 
 fun Sdk.whenSupport(block: () -> Unit) {
     if (isSupportedVersion(this.versionString))

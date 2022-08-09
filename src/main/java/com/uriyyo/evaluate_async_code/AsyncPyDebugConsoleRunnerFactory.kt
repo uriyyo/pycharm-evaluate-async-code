@@ -20,7 +20,11 @@ class AsyncPyDebugConsoleRunnerFactory : PydevConsoleRunnerFactory() {
             params.envs,
             params.consoleType,
             params.settingsProvider,
-            arrayOf(setupAsyncPyDevScript(), *(params.setupFragment ?: arrayOf())),
+            arrayOf(
+                    setupAsyncPyDevScript(),
+                    *(params.setupFragment ?: arrayOf()),
+                    cleanupAsyncPyDevScript(),
+            ),
         )
     }
 }
