@@ -7,7 +7,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.xdebugger.XDebugSession
 import com.jetbrains.python.debugger.PyDebugProcess
 import com.jetbrains.python.debugger.PyDebugRunner
-import com.jetbrains.python.debugger.PyDebugValue
 import com.jetbrains.python.run.PythonCommandLineState
 import com.jetbrains.python.sdk.PythonSdkUtil
 import java.net.ServerSocket
@@ -34,19 +33,11 @@ class AsyncPyDebugRunner : PyDebugRunner() {
             serverSocket: ServerSocket,
             result: ExecutionResult,
             pyState: PythonCommandLineState
-    ): PyDebugProcess {
-        return object : PyDebugProcess(
-                session, serverSocket, result.executionConsole, result.processHandler, pyState.isMultiprocessDebug
-        ) {
-            override fun evaluate(expression: String?, execute: Boolean, doTrunc: Boolean): PyDebugValue {
-                if (expression?.let { "async" in it || "await" in it } == true) {
-                    super.evaluate(pydevd_async_init(), true, false)
-                    return super.evaluate(expression, false, doTrunc)
-                }
-
-                return super.evaluate(expression, execute, doTrunc)
-            }
-        }
-    }
-
+    ): PyDebugProcess = AsyncPyDebugProcess(
+        session,
+        serverSocket,
+        result.executionConsole,
+        result.processHandler,
+        pyState.isMultiprocessDebug,
+    )
 }
