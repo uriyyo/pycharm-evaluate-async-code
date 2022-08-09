@@ -25,7 +25,7 @@ abstract class AbstractAsyncDebugSessionFactory : PyDebugSessionFactory() {
 
     override fun appliesTo(sdk: Sdk): Boolean {
         return getIntegration()
-            ?.getMethod<Boolean>("appliesTo", Sdk::class.java)
+            ?.getMethodByName<Boolean>("appliesTo")
             ?.invoke(sdk)
             ?: false
     }

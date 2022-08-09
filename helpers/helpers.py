@@ -13,7 +13,7 @@ PLUGIN_CHECK_CODE_REGEX: Pattern[str] = re.compile(
     re.DOTALL,
 )
 PLUGIN_UPDATE_CODE_REGEX: Pattern[str] = re.compile(
-    r"val PYDEVD_ASYNC_PLUGIN.*",
+    r"val PYDEVD_INLINE_ASYNC_PLUGIN.*",
     re.DOTALL,
 )
 
@@ -51,7 +51,10 @@ def plugin_entry_point(check: bool) -> None:
             err("Kotlin async-pydevd plugin is outdated, please run 'helpers plugin'")
             cli_exit()
     else:
-        async_pydevd_plugin = f'val PYDEVD_ASYNC_PLUGIN = """\n{plugin_code}\n""".trimStart()'
+        async_pydevd_plugin = "\n".join([
+            f'val PYDEVD_INLINE_ASYNC_PLUGIN = """{repr(plugin_code)}"""',
+            f'val PYDEVD_ASYNC_PLUGIN = """\n{plugin_code}\n""".trimStart()',
+        ])
 
         plugin.write_text(
             PLUGIN_UPDATE_CODE_REGEX.sub("", plugin.read_text("utf-8")) + async_pydevd_plugin,

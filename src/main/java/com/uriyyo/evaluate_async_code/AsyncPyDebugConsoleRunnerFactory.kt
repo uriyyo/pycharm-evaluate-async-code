@@ -5,26 +5,34 @@ import com.intellij.openapi.project.Project
 import com.jetbrains.python.console.PydevConsoleRunnerFactory
 
 class AsyncPyDebugConsoleRunnerFactory : PydevConsoleRunnerFactory() {
-    private val frameworkAwareFactory: PydevConsoleRunnerFactory? = loadClass("com.jetbrains.FrameworkAwarePythonConsoleRunnerFactory")
+    private val frameworkAwareFactory: PydevConsoleRunnerFactory? =
+        loadClass("com.jetbrains.FrameworkAwarePythonConsoleRunnerFactory")
 
     override fun createConsoleParameters(project: Project, contextModule: Module?): ConsoleParameters {
         val params = frameworkAwareFactory
-            ?.getMethod<ConsoleParameters>("createConsoleParameters", Project::class.java, Module::class.java)
+            ?.getMethodByName<ConsoleParameters>("createConsoleParameters")
             ?.invoke(project, contextModule)
             ?: super.createConsoleParameters(project, contextModule)
 
-        return ConsoleParameters(
-            params.project,
-            params.sdk,
-            params.workingDir,
-            params.envs,
-            params.consoleType,
-            params.settingsProvider,
-            arrayOf(
-                    setupAsyncPyDevScript(),
-                    *(params.setupFragment ?: arrayOf()),
-                    cleanupAsyncPyDevScript(),
-            ),
-        )
+        return when (params) {
+            is ConstantConsoleParameters -> ConstantConsoleParameters(
+                params.project,
+                params.sdk,
+                params.workingDir,
+                params.envs,
+                params.consoleType,
+                params.settingsProvider,
+                arrayOf(setupAsyncPyDevScript(), *params.setupFragment),
+            )
+            else -> {
+                ignoreExc {
+                    val setupScript = params.getFieldVal<Any>("setupScript")
+                    val oldValue = setupScript.getFieldVal<String>("s")
+                    setupScript.setFieldValue("s", "${setupAsyncPyDevScript()}\n$oldValue")
+                }
+
+                params
+            }
+        }
     }
 }
