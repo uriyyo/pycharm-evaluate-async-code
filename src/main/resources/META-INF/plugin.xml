@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
-    <name>Evaluate async code</name>
-    <version>1.19</version>
+    <name>Evaluate Async Code</name>
+    <version>1.20</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
@@ -10,7 +10,8 @@
     </description>
 
     <change-notes>
-        Fix compatibility issue with 2021.3 version.
+        Fix issue with console integration.
+        Add ability to use docker and docker-compose interpreter.
     </change-notes>
 
     <idea-version since-build="193"/>
@@ -23,6 +24,13 @@
         <applicationService serviceInterface="com.jetbrains.python.console.PythonConsoleRunnerFactory"
                             serviceImplementation="com.uriyyo.evaluate_async_code.AsyncPyDebugConsoleRunnerFactory"
                             overrides="true"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="Pythonid">
+        <debugSessionFactory implementation="com.uriyyo.evaluate_async_code.AsyncDockerDebugSessionFactory"
+                             order="first"/>
+        <debugSessionFactory implementation="com.uriyyo.evaluate_async_code.AsyncDockerComposeDebugSessionFactory"
+                             order="first"/>
     </extensions>
 
     <actions>
