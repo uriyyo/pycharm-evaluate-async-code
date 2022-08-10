@@ -14,7 +14,7 @@
         Add ability to use docker and docker-compose interpreter.
     </change-notes>
 
-    <idea-version since-build="202"/>
+    <idea-version since-build="222"/>
     <depends>com.intellij.modules.lang</depends>
     <depends>com.intellij.modules.python</depends>
 

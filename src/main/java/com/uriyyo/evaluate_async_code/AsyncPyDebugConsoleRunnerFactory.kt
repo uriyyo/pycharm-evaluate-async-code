@@ -24,15 +24,14 @@ class AsyncPyDebugConsoleRunnerFactory : PydevConsoleRunnerFactory() {
                 params.settingsProvider,
                 arrayOf(setupAsyncPyDevScript(), *params.setupFragment),
             )
-            else -> {
-                ignoreExc {
-                    val setupScript = params.getFieldVal<Any>("setupScript")
-                    val oldValue = setupScript.getFieldVal<String>("s")
-                    setupScript.setFieldValue("s", "${setupAsyncPyDevScript()}\n$oldValue")
-                }
-
-                params
-            }
+            is TargetedConsoleParameters -> TargetedConsoleParameters(
+                params.project,
+                params.sdk,
+                params.workingDir,
+                params.envs,
+                params.consoleType,
+                params.settingsProvider,
+            ) { arrayOf(setupAsyncPyDevScript(), params.setupScript.apply(it)).joinToString("\n") }
         }
     }
 }
