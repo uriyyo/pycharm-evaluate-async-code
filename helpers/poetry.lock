@@ -1,19 +1,19 @@
 [[package]]
 name = "async-eval"
-version = "0.1.9"
+version = "0.1.10"
 description = "eval async code from sync"
 category = "main"
 optional = false
 python-versions = ">=3.7,<4.0"
 
 [package.dependencies]
-nest-asyncio = ">=1.5.5,<2.0.0"
-pydevd-pycharm = {version = ">=222.3739.30,<223.0.0", optional = true, markers = "extra == \"pydevd-pycharm\" or extra == \"all\""}
+nest-asyncio = ">=1.5.6,<2.0.0"
+pydevd-pycharm = {version = "<=223.4884.74", optional = true, markers = "extra == \"pydevd-pycharm\" or extra == \"all\""}
 
 [package.extras]
-trio = ["trio (>=0.21.0,<0.22.0)"]
-all = ["trio (>=0.21.0,<0.22.0)", "pydevd-pycharm (>=222.3739.30,<223.0.0)"]
-pydevd-pycharm = ["pydevd-pycharm (>=222.3739.30,<223.0.0)"]
+all = ["pydevd-pycharm (<=223.4884.74)", "trio (>=0.21,<0.23)"]
+pydevd-pycharm = ["pydevd-pycharm (<=223.4884.74)"]
+trio = ["trio (>=0.21,<0.23)"]
 
 [[package]]
 name = "click"
@@ -36,7 +36,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
 name = "nest-asyncio"
-version = "1.5.5"
+version = "1.5.6"
 description = "Patch asyncio to allow nested event loops"
 category = "main"
 optional = false
@@ -53,10 +53,13 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "670057903bb5bb2a78f51aee15c4707215fc336b5fa72d69718a26199b3d4242"
+content-hash = "c2d8c8e120283142e02f8520c696b45e8ff38f7832f3476b7f59bb42a81f9646"
 
 [metadata.files]
-async-eval = []
+async-eval = [
+    {file = "async_eval-0.1.10-py3-none-any.whl", hash = "sha256:b56bd83671f9cdfa24a2c0ae2f409e48bd391a0e3fcfe2b1b411e555d9ac5fda"},
+    {file = "async_eval-0.1.10.tar.gz", hash = "sha256:491572842d9d1e448a64127d6b660f9b7e51978ad253236ea08c25d9d26263c2"},
+]
 click = [
     {file = "click-8.1.3-py3-none-any.whl", hash = "sha256:bb4d8133cb15a609f44e8213d9b391b0809795062913b383c62be0ee95b1db48"},
     {file = "click-8.1.3.tar.gz", hash = "sha256:7682dc8afb30297001674575ea00d1814d808d6a36af415a82bd481d37ba7b8e"},
@@ -66,7 +69,9 @@ colorama = [
     {file = "colorama-0.4.5.tar.gz", hash = "sha256:e6c6b4334fc50988a639d9b98aa429a0b57da6e17b9a44f0451f930b6967b7a4"},
 ]
 nest-asyncio = [
-    {file = "nest_asyncio-1.5.5-py3-none-any.whl", hash = "sha256:b98e3ec1b246135e4642eceffa5a6c23a3ab12c82ff816a92c612d68205813b2"},
-    {file = "nest_asyncio-1.5.5.tar.gz", hash = "sha256:e442291cd942698be619823a17a86a5759eabe1f8613084790de189fe9e16d65"},
+    {file = "nest_asyncio-1.5.6-py3-none-any.whl", hash = "sha256:b9a953fb40dceaa587d109609098db21900182b16440652454a146cffb06e8b8"},
+    {file = "nest_asyncio-1.5.6.tar.gz", hash = "sha256:d267cc1ff794403f7df692964d1d2a3fa9418ffea2a3f6859a439ff482fef290"},
 ]
-pydevd-pycharm = []
+pydevd-pycharm = [
+    {file = "pydevd-pycharm-222.3739.30.tar.gz", hash = "sha256:2503d6b95572f791ed0289bbf81b83f3dc170ea232fd14b40feffa9b57d19ba5"},
+]
