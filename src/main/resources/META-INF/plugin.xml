@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.uriyyo.evaluate_async_code</id>
     <name>Evaluate Async Code</name>
-    <version>1.21</version>
+    <version>1.22</version>
     <vendor email="1998uriyyo@gmail.com">Yurii Karabas</vendor>
 
     <description>
@@ -10,8 +10,7 @@
     </description>
 
     <change-notes>
-        Bump async-eval version.
-        Remove usage of experimental API.
+        Fix issue when plugin is not enabled automatically.
     </change-notes>
 
     <idea-version since-build="222"/>
