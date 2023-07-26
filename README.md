@@ -6,6 +6,8 @@ Did you try to execute `async` code at PyCharm `Evaluate Expression` window 🤔
 
 This plugin adds ability to use `async/await` almost everywhere while you debug your code 😋
 
+**Note - plugin can work only with python version `>=3.7`**.
+
 <!-- Plugin Examples -->
 
 <!-- Start - Evaluate Expression -->
