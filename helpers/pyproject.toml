@@ -7,7 +7,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-click = "^8.1.6"
+click = "^8.1.7"
 async-eval = { version = "^0.2.0", extras = ["pydevd-pycharm"] }
 
 [tool.poetry.dev-dependencies]
