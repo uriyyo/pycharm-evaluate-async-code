@@ -131,20 +131,20 @@ except NameError:
 """.trimIndent()
 }.memoize()
 
-val PYDEVD_INLINE_ASYNC_PLUGIN = """'import asyncio\nfrom asyncio import AbstractEventLoop\nfrom typing import Any\n\n\ndef is_trio_not_running() -> bool:\n    try:\n        from trio._core._run import GLOBAL_RUN_CONTEXT\n    except ImportError:  # pragma: no cover\n        return True\n\n    return not hasattr(GLOBAL_RUN_CONTEXT, "runner")\n\n\ndef get_current_loop() -> AbstractEventLoop:  # pragma: no cover\n    try:\n        return asyncio.get_running_loop()\n    except RuntimeError:\n        return asyncio.new_event_loop()\n\n\ndef is_async_debug_available(loop: Any = None) -> bool:\n    if loop is None:\n        loop = get_current_loop()\n\n    return bool(loop.__class__.__module__.lstrip("_").startswith("asyncio"))\n\n\ndef verify_async_debug_available() -> None:\n    if not is_trio_not_running():\n        raise RuntimeError(\n            "Can not evaluate async code with trio event loop. "\n            "Only native asyncio event loop can be used for async code evaluating.",\n        )\n\n    if not is_async_debug_available():\n        cls = get_current_loop().__class__\n\n        raise RuntimeError(\n            f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "\n            "Only native asyncio event loop can be used for async code evaluating.",\n        )\n\n\n__all__ = [\n    "get_current_loop",\n    "is_async_debug_available",\n    "verify_async_debug_available",\n]\n\nimport ast\nimport inspect\nimport sys\nimport textwrap\nimport types\nfrom asyncio.tasks import _enter_task, _leave_task, current_task\nfrom contextvars import Context\nfrom typing import (\n    Any,\n    Awaitable,\n    Callable,\n    Optional,\n    Tuple,\n    TypeVar,\n    Union,\n    cast,\n    no_type_check,\n)\n\ntry:\n    from _pydevd_bundle.pydevd_save_locals import save_locals\nexcept ImportError:  # pragma: no cover\n    import ctypes\n\n    def save_locals(frame: types.FrameType) -> None:\n        ctypes.pythonapi.PyFrame_LocalsToFast(ctypes.py_object(frame), ctypes.c_int(1))\n\n\ndef _noop(*_: Any, **__: Any) -> Any:  # pragma: no cover\n    return None\n\n\n_: Any\n\ntry:\n    _ = verify_async_debug_available  # type: ignore # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.asyncio_patch import verify_async_debug_available\n    except ImportError:\n        verify_async_debug_available = _noop\n\ntry:\n    _ = get_current_loop  # type: ignore # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.asyncio_patch import get_current_loop\n    except ImportError:\n        get_current_loop = _noop\n\n\n_ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(\n    \'\'\'\\\nasync def __async_func__(_locals):\n    async def __func_wrapper__(_locals):\n        locals().update(_locals)\n        try:\n            pass\n        finally:\n            _locals.update(locals())\n            _locals.pop("_locals", None)\n\n    from contextvars import copy_context\n\n    try:\n       r = await __func_wrapper__(_locals)\n       is_exc = False\n    except Exception as e:\n        r, is_exc = e, True\n\n    return is_exc, r, copy_context()\n\'\'\',\n)\n\n\ndef _compile_ast(node: ast.AST, filename: str = "<eval>", mode: str = "exec") -> types.CodeType:\n    return cast(types.CodeType, compile(node, filename, mode))  # type: ignore\n\n\nASTWithBody = Union[ast.Module, ast.With, ast.AsyncWith]\n\n\ndef _make_stmt_as_return(parent: ASTWithBody, root: ast.AST, filename: str) -> types.CodeType:\n    node = parent.body[-1]\n\n    if isinstance(node, ast.Expr):\n        parent.body[-1] = ast.copy_location(ast.Return(node.value), node)\n\n    try:\n        return _compile_ast(root, filename)\n    except (SyntaxError, TypeError):  # pragma: no cover  # TODO: found case to cover except body\n        parent.body[-1] = node\n        return _compile_ast(root, filename)\n\n\ndef _transform_to_async(code: str, filename: str) -> types.CodeType:\n    base = ast.parse(_ASYNC_EVAL_CODE_TEMPLATE)\n    module = ast.parse(code)\n\n    func: ast.AsyncFunctionDef = cast(ast.AsyncFunctionDef, cast(ast.AsyncFunctionDef, base.body[0]).body[0])\n    try_stmt: ast.Try = cast(ast.Try, func.body[-1])\n\n    try_stmt.body = module.body\n\n    parent: ASTWithBody = module\n    while isinstance(parent.body[-1], (ast.AsyncWith, ast.With)):\n        parent = cast(ASTWithBody, parent.body[-1])\n\n    return _make_stmt_as_return(parent, base, filename)\n\n\ndef _compile_async_func(\n    code: types.CodeType,\n    _locals: dict,\n    _globals: dict,\n) -> Callable[[dict], Awaitable[Tuple[bool, Any, Context]]]:\n    exec(code, _globals, _locals)\n\n    return cast(\n        Callable[[dict], Awaitable[Tuple[bool, Any, Context]]],\n        _locals.pop("__async_func__"),\n    )\n\n\nclass _AsyncNodeFound(Exception):\n    pass\n\n\nclass _AsyncCodeVisitor(ast.NodeVisitor):\n    @classmethod\n    def check(cls, code: str) -> bool:\n        try:\n            node = ast.parse(code)\n        except SyntaxError:\n            return False\n\n        try:\n            return bool(cls().visit(node))\n        except _AsyncNodeFound:\n            return True\n\n    def _ignore(self, _: ast.AST) -> Any:\n        return\n\n    def _done(self, _: Optional[ast.AST] = None) -> Any:\n        raise _AsyncNodeFound\n\n    def _visit_gen(self, node: Union[ast.GeneratorExp, ast.ListComp, ast.DictComp, ast.SetComp]) -> Any:\n        if any(gen.is_async for gen in node.generators):\n            self._done()\n\n        super().generic_visit(node)\n\n    def _visit_func(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> Any:\n        # check only args and decorators\n        for n in (node.args, *node.decorator_list):\n            super().generic_visit(n)\n\n    # special check for a function def\n    visit_AsyncFunctionDef = _visit_func\n    visit_FunctionDef = _visit_func\n\n    # no need to check class definitions\n    visit_ClassDef = _ignore  # type: ignore\n\n    # basic async statements\n    visit_AsyncFor = _done  # type: ignore\n    visit_AsyncWith = _done  # type: ignore\n    visit_Await = _done  # type: ignore\n\n    # all kind of a generator/comprehensions (they can be async)\n    visit_GeneratorExp = _visit_gen\n    visit_ListComp = _visit_gen\n    visit_SetComp = _visit_gen\n    visit_DictComp = _visit_gen\n\n\ndef is_async_code(code: str) -> bool:\n    return _AsyncCodeVisitor.check(code)\n\n\nT = TypeVar("T")\n\n\n@no_type_check\ndef _run_coro(coro: Awaitable[T]) -> T:\n    loop = get_current_loop()\n\n    if not loop.is_running():\n        return loop.run_until_complete(coro)\n\n    current = current_task(loop)\n\n    t = loop.create_task(coro)\n\n    try:\n        if current is not None:\n            _leave_task(loop, current)\n\n        while not t.done():\n            loop._run_once()\n\n        return t.result()\n    finally:\n        if current is not None:\n            _enter_task(loop, current)\n\n\ndef _reflect_context(ctx: Context) -> None:\n    for v in ctx:\n        v.set(ctx[v])\n\n\n# async equivalent of builtin eval function\ndef async_eval(\n    code: str,\n    _globals: Optional[dict] = None,\n    _locals: Optional[dict] = None,\n    *,\n    filename: str = "<eval>",\n) -> Any:\n    verify_async_debug_available()\n\n    caller: types.FrameType = inspect.currentframe().f_back  # type: ignore\n\n    if _locals is None:\n        _locals = caller.f_locals\n\n    if _globals is None:\n        _globals = caller.f_globals\n\n    code_obj = _transform_to_async(code, filename)\n    func = _compile_async_func(code_obj, _locals, _globals)\n\n    try:\n        is_exc, result, ctx = _run_coro(func(_locals))\n\n        _reflect_context(ctx)\n\n        if is_exc:\n            raise result\n\n        return result\n    finally:\n        save_locals(caller)\n\n\nsys.__async_eval__ = async_eval  # type: ignore\n\n__all__ = ["async_eval", "is_async_code"]\n\nfrom typing import Any\n\n\ndef _noop(*_: Any, **__: Any) -> Any:  # pragma: no cover\n    return False\n\n\ntry:  # pragma: no cover\n    # only for testing purposes\n    _ = is_async_code  # type: ignore  # noqa\n    _ = verify_async_debug_available  # type: ignore  # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.async_eval import is_async_code\n        from async_eval.asyncio_patch import verify_async_debug_available\n    except ImportError:\n        is_async_code = _noop\n        verify_async_debug_available = _noop\n\n\ndef make_code_async(code: str) -> str:\n    if not code:\n        return code\n\n    original_code = code.replace("@" + "LINE" + "@", "\\n")\n\n    if is_async_code(original_code):\n        return f"__import__(\'sys\').__async_eval__({original_code!r}, globals(), locals())"\n\n    return code\n\n\n# 1. Add ability to evaluate async expression\nfrom _pydevd_bundle import pydevd_save_locals, pydevd_vars\n\noriginal_evaluate = pydevd_vars.evaluate_expression\n\n\ndef evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:\n    if is_async_code(expression):\n        verify_async_debug_available()\n        doExec = False\n\n    try:\n        return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)\n    finally:\n        frame = pydevd_vars.find_frame(thread_id, frame_id)\n\n        if frame is not None:\n            pydevd_save_locals.save_locals(frame)\n            del frame\n\n\npydevd_vars.evaluate_expression = evaluate_expression\n\n# 2. Add ability to use async breakpoint conditions\nfrom _pydevd_bundle.pydevd_breakpoints import LineBreakpoint\n\n\ndef normalize_line_breakpoint(line_breakpoint: LineBreakpoint) -> None:\n    line_breakpoint.expression = make_code_async(line_breakpoint.expression)\n    line_breakpoint.condition = make_code_async(line_breakpoint.condition)\n\n\noriginal_init = LineBreakpoint.__init__\n\n\ndef line_breakpoint_init(self: LineBreakpoint, *args: Any, **kwargs: Any) -> None:\n    original_init(self, *args, **kwargs)\n    normalize_line_breakpoint(self)\n\n\nLineBreakpoint.__init__ = line_breakpoint_init\n\n# Update old breakpoints\nimport gc\n\nfor obj in gc.get_objects():  # pragma: no cover\n    if isinstance(obj, LineBreakpoint):\n        normalize_line_breakpoint(obj)\n\n# 3. Add ability to use async code in console\nfrom _pydevd_bundle import pydevd_console_integration\n\noriginal_console_exec = pydevd_console_integration.console_exec\n\n\ndef console_exec(thread_id: object, frame_id: object, expression: str, dbg: Any) -> Any:\n    return original_console_exec(thread_id, frame_id, make_code_async(expression), dbg)\n\n\npydevd_console_integration.console_exec = console_exec\n\n# 4. Add ability to use async code\nfrom _pydev_bundle.pydev_console_types import Command\n\n\ndef command_run(self: Command) -> None:\n    text = make_code_async(self.code_fragment.text)\n    symbol = self.symbol_for_fragment(self.code_fragment)\n\n    self.more = self.interpreter.runsource(text, "<input>", symbol)\n\n\nCommand.run = command_run\n\nimport sys\nfrom runpy import run_path\n\nif __name__ == "__main__":  # pragma: no cover\n    run_path(sys.argv.pop(1), {}, "__main__")  # pragma: no cover\n'"""
+val PYDEVD_INLINE_ASYNC_PLUGIN = """'import asyncio\nfrom asyncio import AbstractEventLoop\nfrom typing import Any\n\n\ndef is_trio_running() -> bool:\n    try:\n        from trio._core._run import GLOBAL_RUN_CONTEXT\n    except ImportError:  # pragma: no cover\n        return False\n\n    return hasattr(GLOBAL_RUN_CONTEXT, "runner")\n\n\ndef get_current_loop() -> AbstractEventLoop:  # pragma: no cover\n    try:\n        return asyncio.get_running_loop()\n    except RuntimeError:\n        return asyncio.new_event_loop()\n\n\ndef is_async_debug_available(loop: Any = None) -> bool:\n    if loop is None:\n        loop = get_current_loop()\n\n    return bool(loop.__class__.__module__.lstrip("_").startswith("asyncio"))\n\n\ndef verify_async_debug_available() -> None:\n    if not is_trio_running() and not is_async_debug_available():\n        cls = get_current_loop().__class__\n\n        raise RuntimeError(\n            f"Can not evaluate async code with event loop {cls.__module__}.{cls.__qualname__}. "\n            "Only native asyncio event loop can be used for async code evaluating.",\n        )\n\n\n__all__ = [\n    "get_current_loop",\n    "is_trio_running",\n    "is_async_debug_available",\n    "verify_async_debug_available",\n]\n\nimport ast\nimport inspect\nimport sys\nimport textwrap\nimport types\nfrom asyncio.tasks import _enter_task, _leave_task, current_task\nfrom concurrent.futures import ThreadPoolExecutor\nfrom contextvars import Context, copy_context\nfrom typing import (\n    Any,\n    Awaitable,\n    Callable,\n    Optional,\n    Tuple,\n    TypeVar,\n    Union,\n    cast,\n    no_type_check,\n)\n\ntry:\n    from _pydevd_bundle.pydevd_save_locals import save_locals\nexcept ImportError:  # pragma: no cover\n    import ctypes\n\n    def save_locals(frame: types.FrameType) -> None:\n        ctypes.pythonapi.PyFrame_LocalsToFast(ctypes.py_object(frame), ctypes.c_int(1))\n\n\ndef _noop(*_: Any, **__: Any) -> Any:  # pragma: no cover\n    return None\n\n\n_: Any\n\ntry:\n    _ = verify_async_debug_available  # type: ignore # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.asyncio_patch import verify_async_debug_available\n    except ImportError:\n        verify_async_debug_available = _noop\n\ntry:\n    _ = get_current_loop  # type: ignore # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.asyncio_patch import get_current_loop\n    except ImportError:\n        get_current_loop = _noop\n\ntry:\n    _ = is_trio_running  # type: ignore # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.asyncio_patch import is_trio_running\n    except ImportError:\n        is_trio_running = _noop\n\n\n_ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(\n    \'\'\'\\\nasync def __async_func__(_locals, _ctx=None):\n    async def __func_wrapper__(_locals):\n        locals().update(_locals)\n        try:\n            pass\n        finally:\n            _locals.update(locals())\n            _locals.pop("_ctx", None)\n            _locals.pop("_locals", None)\n\n    if _ctx:\n        for v in _ctx:\n            v.set(_ctx[v])\n\n    from contextvars import copy_context\n\n    try:\n       r = await __func_wrapper__(_locals)\n       is_exc = False\n    except Exception as e:\n        r, is_exc = e, True\n\n    return is_exc, r, copy_context()\n\'\'\',\n)\n\n\ndef _compile_ast(node: ast.AST, filename: str = "<eval>", mode: str = "exec") -> types.CodeType:\n    return cast(types.CodeType, compile(node, filename, mode))  # type: ignore\n\n\nASTWithBody = Union[ast.Module, ast.With, ast.AsyncWith]\n\n\ndef _make_stmt_as_return(parent: ASTWithBody, root: ast.AST, filename: str) -> types.CodeType:\n    node = parent.body[-1]\n\n    if isinstance(node, ast.Expr):\n        parent.body[-1] = ast.copy_location(ast.Return(node.value), node)\n\n    try:\n        return _compile_ast(root, filename)\n    except (SyntaxError, TypeError):  # pragma: no cover  # TODO: found case to cover except body\n        parent.body[-1] = node\n        return _compile_ast(root, filename)\n\n\ndef _transform_to_async(code: str, filename: str) -> types.CodeType:\n    base = ast.parse(_ASYNC_EVAL_CODE_TEMPLATE)\n    module = ast.parse(code)\n\n    func: ast.AsyncFunctionDef = cast(ast.AsyncFunctionDef, cast(ast.AsyncFunctionDef, base.body[0]).body[0])\n    try_stmt: ast.Try = cast(ast.Try, func.body[-1])\n\n    try_stmt.body = module.body\n\n    parent: ASTWithBody = module\n    while isinstance(parent.body[-1], (ast.AsyncWith, ast.With)):\n        parent = cast(ASTWithBody, parent.body[-1])\n\n    return _make_stmt_as_return(parent, base, filename)\n\n\ndef _compile_async_func(\n    code: types.CodeType,\n    _locals: dict,\n    _globals: dict,\n) -> Callable[[dict], Awaitable[Tuple[bool, Any, Context]]]:\n    exec(code, _globals, _locals)\n\n    return cast(\n        Callable[[dict], Awaitable[Tuple[bool, Any, Context]]],\n        _locals.pop("__async_func__"),\n    )\n\n\nclass _AsyncNodeFound(Exception):\n    pass\n\n\nclass _AsyncCodeVisitor(ast.NodeVisitor):\n    @classmethod\n    def check(cls, code: str) -> bool:\n        try:\n            node = ast.parse(code)\n        except SyntaxError:\n            return False\n\n        try:\n            return bool(cls().visit(node))\n        except _AsyncNodeFound:\n            return True\n\n    def _ignore(self, _: ast.AST) -> Any:\n        return\n\n    def _done(self, _: Optional[ast.AST] = None) -> Any:\n        raise _AsyncNodeFound\n\n    def _visit_gen(self, node: Union[ast.GeneratorExp, ast.ListComp, ast.DictComp, ast.SetComp]) -> Any:\n        if any(gen.is_async for gen in node.generators):\n            self._done()\n\n        super().generic_visit(node)\n\n    def _visit_func(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> Any:\n        # check only args and decorators\n        for n in (node.args, *node.decorator_list):\n            super().generic_visit(n)\n\n    # special check for a function def\n    visit_AsyncFunctionDef = _visit_func\n    visit_FunctionDef = _visit_func\n\n    # no need to check class definitions\n    visit_ClassDef = _ignore  # type: ignore\n\n    # basic async statements\n    visit_AsyncFor = _done  # type: ignore\n    visit_AsyncWith = _done  # type: ignore\n    visit_Await = _done  # type: ignore\n\n    # all kind of a generator/comprehensions (they can be async)\n    visit_GeneratorExp = _visit_gen\n    visit_ListComp = _visit_gen\n    visit_SetComp = _visit_gen\n    visit_DictComp = _visit_gen\n\n\ndef is_async_code(code: str) -> bool:\n    return _AsyncCodeVisitor.check(code)\n\n\nT = TypeVar("T")\n\n\n@no_type_check\ndef _asyncio_run_coro(coro: Awaitable[T]) -> T:\n    loop = get_current_loop()\n\n    if not loop.is_running():\n        return loop.run_until_complete(coro)\n\n    current = current_task(loop)\n\n    t = loop.create_task(coro)\n\n    try:\n        if current is not None:\n            _leave_task(loop, current)\n\n        while not t.done():\n            loop._run_once()\n\n        return t.result()\n    finally:\n        if current is not None:\n            _enter_task(loop, current)\n\n\n@no_type_check\ndef _trio_run_coro(coro: Awaitable[T]) -> T:\n    import trio\n\n    async def _run() -> T:\n        return await coro\n\n    with ThreadPoolExecutor(max_workers=1) as pool:\n        return pool.submit(trio.run, _run).result()\n\n\n@no_type_check\ndef _run_coro(func: Callable[..., Awaitable[T]], _locals: Any) -> T:\n    if is_trio_running():\n        return _trio_run_coro(func(_locals, copy_context()))\n\n    return _asyncio_run_coro(func(_locals))\n\n\ndef _reflect_context(ctx: Context) -> None:\n    for v in ctx:\n        v.set(ctx[v])\n\n\n# async equivalent of builtin eval function\ndef async_eval(\n    code: str,\n    _globals: Optional[dict] = None,\n    _locals: Optional[dict] = None,\n    *,\n    filename: str = "<eval>",\n) -> Any:\n    verify_async_debug_available()\n\n    caller: types.FrameType = inspect.currentframe().f_back  # type: ignore\n\n    if _locals is None:\n        _locals = caller.f_locals\n\n    if _globals is None:\n        _globals = caller.f_globals\n\n    code_obj = _transform_to_async(code, filename)\n    func = _compile_async_func(code_obj, _locals, _globals)\n\n    try:\n        is_exc, result, ctx = _run_coro(func, _locals)\n\n        _reflect_context(ctx)\n\n        if is_exc:\n            raise result\n\n        return result\n    finally:\n        save_locals(caller)\n\n\nsys.__async_eval__ = async_eval  # type: ignore\n\n__all__ = ["async_eval", "is_async_code"]\n\nfrom typing import Any\n\n\ndef _noop(*_: Any, **__: Any) -> Any:  # pragma: no cover\n    return False\n\n\ntry:  # pragma: no cover\n    # only for testing purposes\n    _ = is_async_code  # type: ignore  # noqa\n    _ = verify_async_debug_available  # type: ignore  # noqa\nexcept NameError:  # pragma: no cover\n    try:\n        from async_eval.async_eval import is_async_code\n        from async_eval.asyncio_patch import verify_async_debug_available\n    except ImportError:\n        is_async_code = _noop\n        verify_async_debug_available = _noop\n\n\ndef make_code_async(code: str) -> str:\n    if not code:\n        return code\n\n    original_code = code.replace("@" + "LINE" + "@", "\\n")\n\n    if is_async_code(original_code):\n        return f"__import__(\'sys\').__async_eval__({original_code!r}, globals(), locals())"\n\n    return code\n\n\n# 1. Add ability to evaluate async expression\nfrom _pydevd_bundle import pydevd_save_locals, pydevd_vars\n\noriginal_evaluate = pydevd_vars.evaluate_expression\n\n\ndef evaluate_expression(thread_id: object, frame_id: object, expression: str, doExec: bool) -> Any:\n    if is_async_code(expression):\n        verify_async_debug_available()\n        doExec = False\n\n    try:\n        return original_evaluate(thread_id, frame_id, make_code_async(expression), doExec)\n    finally:\n        frame = pydevd_vars.find_frame(thread_id, frame_id)\n\n        if frame is not None:\n            pydevd_save_locals.save_locals(frame)\n            del frame\n\n\npydevd_vars.evaluate_expression = evaluate_expression\n\n# 2. Add ability to use async breakpoint conditions\nfrom _pydevd_bundle.pydevd_breakpoints import LineBreakpoint\n\n\ndef normalize_line_breakpoint(line_breakpoint: LineBreakpoint) -> None:\n    line_breakpoint.expression = make_code_async(line_breakpoint.expression)\n    line_breakpoint.condition = make_code_async(line_breakpoint.condition)\n\n\noriginal_init = LineBreakpoint.__init__\n\n\ndef line_breakpoint_init(self: LineBreakpoint, *args: Any, **kwargs: Any) -> None:\n    original_init(self, *args, **kwargs)\n    normalize_line_breakpoint(self)\n\n\nLineBreakpoint.__init__ = line_breakpoint_init\n\n# Update old breakpoints\nimport gc\n\nfor obj in gc.get_objects():  # pragma: no cover\n    if isinstance(obj, LineBreakpoint):\n        normalize_line_breakpoint(obj)\n\n# 3. Add ability to use async code in console\nfrom _pydevd_bundle import pydevd_console_integration\n\noriginal_console_exec = pydevd_console_integration.console_exec\n\n\ndef console_exec(thread_id: object, frame_id: object, expression: str, dbg: Any) -> Any:\n    return original_console_exec(thread_id, frame_id, make_code_async(expression), dbg)\n\n\npydevd_console_integration.console_exec = console_exec\n\n# 4. Add ability to use async code\nfrom _pydev_bundle.pydev_console_types import Command\n\n\ndef command_run(self: Command) -> None:\n    text = make_code_async(self.code_fragment.text)\n    symbol = self.symbol_for_fragment(self.code_fragment)\n\n    self.more = self.interpreter.runsource(text, "<input>", symbol)\n\n\nCommand.run = command_run\n\nimport sys\nfrom runpy import run_path\n\nif __name__ == "__main__":  # pragma: no cover\n    run_path(sys.argv.pop(1), {}, "__main__")  # pragma: no cover\n'"""
 val PYDEVD_ASYNC_PLUGIN = """
 import asyncio
 from asyncio import AbstractEventLoop
 from typing import Any
 
 
-def is_trio_not_running() -> bool:
+def is_trio_running() -> bool:
     try:
         from trio._core._run import GLOBAL_RUN_CONTEXT
     except ImportError:  # pragma: no cover
-        return True
+        return False
 
-    return not hasattr(GLOBAL_RUN_CONTEXT, "runner")
+    return hasattr(GLOBAL_RUN_CONTEXT, "runner")
 
 
 def get_current_loop() -> AbstractEventLoop:  # pragma: no cover
@@ -162,13 +162,7 @@ def is_async_debug_available(loop: Any = None) -> bool:
 
 
 def verify_async_debug_available() -> None:
-    if not is_trio_not_running():
-        raise RuntimeError(
-            "Can not evaluate async code with trio event loop. "
-            "Only native asyncio event loop can be used for async code evaluating.",
-        )
-
-    if not is_async_debug_available():
+    if not is_trio_running() and not is_async_debug_available():
         cls = get_current_loop().__class__
 
         raise RuntimeError(
@@ -179,6 +173,7 @@ def verify_async_debug_available() -> None:
 
 __all__ = [
     "get_current_loop",
+    "is_trio_running",
     "is_async_debug_available",
     "verify_async_debug_available",
 ]
@@ -189,7 +184,8 @@ import sys
 import textwrap
 import types
 from asyncio.tasks import _enter_task, _leave_task, current_task
-from contextvars import Context
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import Context, copy_context
 from typing import (
     Any,
     Awaitable,
@@ -233,17 +229,30 @@ except NameError:  # pragma: no cover
     except ImportError:
         get_current_loop = _noop
 
+try:
+    _ = is_trio_running  # type: ignore # noqa
+except NameError:  # pragma: no cover
+    try:
+        from async_eval.asyncio_patch import is_trio_running
+    except ImportError:
+        is_trio_running = _noop
+
 
 _ASYNC_EVAL_CODE_TEMPLATE = textwrap.dedent(
     '''\
-async def __async_func__(_locals):
+async def __async_func__(_locals, _ctx=None):
     async def __func_wrapper__(_locals):
         locals().update(_locals)
         try:
             pass
         finally:
             _locals.update(locals())
+            _locals.pop("_ctx", None)
             _locals.pop("_locals", None)
+
+    if _ctx:
+        for v in _ctx:
+            v.set(_ctx[v])
 
     from contextvars import copy_context
 
@@ -368,7 +377,7 @@ T = TypeVar("T")
 
 
 @no_type_check
-def _run_coro(coro: Awaitable[T]) -> T:
+def _asyncio_run_coro(coro: Awaitable[T]) -> T:
     loop = get_current_loop()
 
     if not loop.is_running():
@@ -389,6 +398,25 @@ def _run_coro(coro: Awaitable[T]) -> T:
     finally:
         if current is not None:
             _enter_task(loop, current)
+
+
+@no_type_check
+def _trio_run_coro(coro: Awaitable[T]) -> T:
+    import trio
+
+    async def _run() -> T:
+        return await coro
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(trio.run, _run).result()
+
+
+@no_type_check
+def _run_coro(func: Callable[..., Awaitable[T]], _locals: Any) -> T:
+    if is_trio_running():
+        return _trio_run_coro(func(_locals, copy_context()))
+
+    return _asyncio_run_coro(func(_locals))
 
 
 def _reflect_context(ctx: Context) -> None:
@@ -418,7 +446,7 @@ def async_eval(
     func = _compile_async_func(code_obj, _locals, _globals)
 
     try:
-        is_exc, result, ctx = _run_coro(func(_locals))
+        is_exc, result, ctx = _run_coro(func, _locals)
 
         _reflect_context(ctx)
 
